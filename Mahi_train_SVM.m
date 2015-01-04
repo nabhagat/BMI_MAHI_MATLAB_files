@@ -10,7 +10,9 @@
 % 6/10/14 - Change desired real-time frequency to 20 hz (50 ms)
 % 6/28/14 - Saving Covariance matrix and mean vector for smart and conventional features 
 %           to directly compute Mahalanobis distance
-
+% 1/3/15 - Added switch statement to select loop_start:loop_end in FOR
+%                  loops
+%               - Added option to load previously computed Performance variable
 clear;
 %close all;
 %% Global Variables
@@ -18,7 +20,7 @@ myColors = ['g','r','m','k','y','c','m','g','r','b','k','b','r','m','g','r','b',
     'g','r','b','k','y','c','m','g','r','b','k','b','r','m','g','r','b','k','y','c','m'];
 
 % Subject Details
-Subject_name = 'BNBO';
+Subject_name = 'PLSH';
 Sess_num = '2';
 Cond_num = 1;  % 1 - Active; 2 - Passive; 3 - Triggered; 4 - Observation 
 Block_num = 160;
@@ -76,9 +78,21 @@ downsamp_factor = Average.Fs_eeg/Fs_eeg;
        end
     end
 
+%0. Use previously trained models? Ex: CVO, smart_features, etc. 
+use_previous_models = 1;    
+
+if use_previous_models == 1
+    prev_Performance = importdata([folder_path Subject_name '_ses' num2str(Sess_num) '_cond' num2str(Cond_num) ...
+        '_block' num2str(Block_num) '_performance_optimized_causal.mat']);  
+end
+    
 %1. Classifier Channels
+if use_previous_models == 1
+    classchannels = prev_Performance.classchannels;
+else
     classchannels = Average.RP_chans(1:4);
     %classchannels = [14 9 48];
+end
 
 %2. Classifier parameters
     kernel_type = 2; % 2 - RBF
@@ -92,13 +106,31 @@ downsamp_factor = Average.Fs_eeg/Fs_eeg;
     hybrid_classifier = 0;
 
 %3. Use Smart/Conventional features
-    use_conventional_features = 1;
+    use_conventional_features = 0;
     use_smart_features = 1;
     keep_bad_trials = 0;   % Remove bad trials only from Smart Features
     % Find peak within interval, Reject trials reject_trial_onwards 
     find_peak_interval = [-2.0 0.5];            % ranges up to 0.5 sec after movement onset because of phase delay filtering
     reject_trial_before = -1.5; % Seconds. reject trials for which negative peak is reached earlier than -1.5 sec
     
+    % Decide loop_start, loop_end values
+    switch use_conventional_features
+        case 1
+            switch use_smart_features
+                case 1
+                    loop_start = 1; loop_end = 2; 
+                case 0
+                    loop_start = 1; loop_end = 1;
+            end
+        case 0
+            switch use_smart_features
+                case 1
+                    loop_start = 2; loop_end = 2; 
+                case 0
+                    error('Error!! Atleast one of use_conventional_features/use_smart_features must be set');
+            end    
+    end
+     
 %4. Cross validation approach
     use_shifting_window_CV = 1;  % 0 - Conventional CrossValidation, 1 - Shifting Window CrossValidation 
     crossvalidation_trial_time = [-2.5 1]; % Time interval over which cross validation is done for each trial 
@@ -116,11 +148,13 @@ downsamp_factor = Average.Fs_eeg/Fs_eeg;
 window_length_range = [10:20]; %round(0.6*Fs_eeg); %[1:17]; 
 
 for wl = 1:length(window_length_range) 
-    % Initialize variables
+% Initialize variables
     %data_set_labels = [ones(no_epochs,1); 2*ones(no_epochs,1)]; 
     [no_epochs,no_datapts,no_channels] = size(Average.move_epochs);
     Conventional_Features = [];
     Smart_Features = [];
+    smart_Mu_move = []; smart_Cov_Mat = [];
+    conv_Mu_move = []; conv_Cov_Mat = [];
     bad_move_trials = []; 
     good_move_trials = [];
       
@@ -129,7 +163,7 @@ for wl = 1:length(window_length_range)
     %window_length = (move_window(2) - move_window(1))*Fs_eeg; % 5*100 = 500 msec 
     
 %6. Move and Rest Windows
-    move_window_stop_time = -0.50;       % Only required to be decided for conventional features. (Median EMG onset time)
+    move_window_stop_time = 0.50;       % Only required to be decided for conventional features. (Median EMG onset time)
     move_window_start_time = move_window_stop_time - window_length/Fs_eeg;
     move_window = [move_window_start_time move_window_stop_time];       
                                     
@@ -154,9 +188,7 @@ for wl = 1:length(window_length_range)
     mlim1 = round(abs( move_erp_time(1)-(move_window(1)))*Fs_eeg+1);
     mlim2 = round(abs( move_erp_time(1)-(move_window(2)))*Fs_eeg+1);
     rlim1 = round(abs( rest_erp_time(1)-(rest_window(1)))*Fs_eeg+1);
-    rlim2 = round(abs( rest_erp_time(1)-(rest_window(2)))*Fs_eeg+1);
-    
-    
+    rlim2 = round(abs( rest_erp_time(1)-(rest_window(2)))*Fs_eeg+1);    
 %% Fixed window (Conventional) features
 if use_conventional_features == 1   
 %1. Slope
@@ -444,11 +476,11 @@ end
 % % %lda_avg_accuracy = mean(accur)
 %% Support Vector Machines Classifier for EEG
     
-    for use_feature = 1:2
+    for use_feature = loop_start:loop_end
         if use_feature == 1     % Conventional Features
              good_trials_move_ch_avg = move_ch_avg;
              good_trials_rest_ch_avg = rest_ch_avg;
-             apply_scaling_for_SVM = 1;
+             apply_scaling_for_SVM = 0;                                                     % Do not apply scaling; improves accuracy. Added by Nikunj - 1/3/2015
              classifier_dataset = Conventional_Features; 
              test_Cov_Mat = conv_Cov_Mat;
              test_Mu_move = conv_Mu_move;
@@ -464,7 +496,12 @@ end
         end
 
         no_epochs = round(size(classifier_dataset,1)/2);
+        
+%         if use_previous_models == 1                                                                % Use cross validation trials from previous analysis
+%             CVO = prev_Performance.CVO;
+%         else
         CVO = cvpartition(no_epochs,'kfold',10);
+%         end
         data_set_labels = [ones(no_epochs,1); 2*ones(no_epochs,1)]; %Classifier labels 1 - Go, 2 - No-Go 
 
     % 1. Scale data set between minval to maxval
@@ -642,7 +679,7 @@ All_eeg_accur{wl} = eeg_accur;
 end % end window_length for loop
 %% Plot ROC Curve and determine optimal window length for smart and
 if length(window_length_range) > 1
-    for use_feature = 1:2               
+    for use_feature = loop_start:loop_end              
        % Choose optimal_wl
        for roc_wl = 1:length(window_length_range) 
            wl_CM = squeeze(All_total_CM{roc_wl}(use_feature,:,:));
@@ -730,7 +767,7 @@ else
    wl_CM = squeeze(All_total_CM{conv_opt_wl_ind});
    roc_measures =   [wl_CM(1,1)/(wl_CM(1,1) + wl_CM(1,2)) ... % TPR
                      wl_CM(2,1)/(wl_CM(2,1) + wl_CM(2,2)) ... % FPR
-                     trace(wl_CM)/sum(sum(wl_CM))] 
+                     trace(wl_CM)/sum(sum(wl_CM))]; 
    roc_OPT_AUC = []; 
    roc_X_Y_Thr = []; 
 end
@@ -890,24 +927,37 @@ Performance.classchannels = classchannels;
 Performance.find_peak_interval = find_peak_interval;
 Performance.reject_trial_before = reject_trial_before;
 Performance.prob_est_threshold = prob_est_threshold;
-Performance.opt_prob_threshold = roc_X_Y_Thr{smart_opt_wl_ind,2}(smart_p_opt_ind,3,2);
 
-Performance.move_window = []; % Not valid for Smart Features
-Performance.rest_window = All_rest_window(smart_opt_wl_ind,:);
-Performance.bad_move_trials = All_bad_move_trials{smart_opt_wl_ind};
-Performance.good_move_trials = All_good_move_trials{smart_opt_wl_ind};
-Performance.conv_window_length = conv_optimal_window_length;        % +1 added by Nikunj, 5/14/2014, removed by Nikunj, 6/07/2014
-Performance.conv_opt_wl_ind = conv_opt_wl_ind;
-Performance.smart_window_length = smart_optimal_window_length;
-Performance.smart_opt_wl_ind = smart_opt_wl_ind;
-%Performance.data_set_labels = data_set_labels;         % Confusing. Better avoid saving it
-Performance.Conventional_Features = All_Conventional_Features{conv_opt_wl_ind};       % Old Features
-Performance.Smart_Features = All_Smart_Features{smart_opt_wl_ind};       % New Features
-Performance.C_opt = All_C_opt(smart_opt_wl_ind,2);
-Performance.gamma_opt = All_gamma_opt(smart_opt_wl_ind,2);
-Performance.smart_Cov_Mat = All_smart_Cov_Mat{smart_opt_wl_ind};
-Performance.smart_Mu_move = All_smart_Mu_move{smart_opt_wl_ind};
+if use_conventional_features == 1
+        Performance.conv_window_length = conv_optimal_window_length;        % +1 added by Nikunj, 5/14/2014, removed by Nikunj, 6/07/2014
+        Performance.conv_opt_wl_ind = conv_opt_wl_ind;
+        Performance.Conventional_Features = All_Conventional_Features{conv_opt_wl_ind};       % Old Features
+end
 
+if use_smart_features == 1
+        Performance.opt_prob_threshold = roc_X_Y_Thr{smart_opt_wl_ind,2}(smart_p_opt_ind,3,2);
+        Performance.move_window = []; % Not valid for Smart Features
+        Performance.rest_window = All_rest_window(smart_opt_wl_ind,:);
+        Performance.bad_move_trials = All_bad_move_trials{smart_opt_wl_ind};
+        Performance.good_move_trials = All_good_move_trials{smart_opt_wl_ind};
+        Performance.smart_window_length = smart_optimal_window_length;
+        Performance.smart_opt_wl_ind = smart_opt_wl_ind;
+        %Performance.data_set_labels = data_set_labels;         % Confusing. Better avoid saving it
+        Performance.Smart_Features = All_Smart_Features{smart_opt_wl_ind};       % New Features
+        Performance.C_opt = All_C_opt(smart_opt_wl_ind,2);
+        Performance.gamma_opt = All_gamma_opt(smart_opt_wl_ind,2);
+        Performance.smart_Cov_Mat = All_smart_Cov_Mat{smart_opt_wl_ind};
+        Performance.smart_Mu_move = All_smart_Mu_move{smart_opt_wl_ind};
+        Performance.eeg_svm_model = All_eeg_svm_model{smart_opt_wl_ind}(2,:);   % Only for Smart Features
+        Performance.eeg_prob_estimates = All_eeg_prob_estimates{smart_opt_wl_ind}(2,:);
+        Performance.eeg_decision = All_eeg_decision{smart_opt_wl_ind}(2,:);
+        Performance.eeg_CM = squeeze(All_eeg_CM{smart_opt_wl_ind}(2,:,:,:));
+        Performance.eeg_sensitivity = All_eeg_sensitivity{smart_opt_wl_ind}(2,:);
+        Performance.eeg_specificity = All_eeg_specificity{smart_opt_wl_ind}(2,:);
+        Performance.eeg_accur = All_eeg_accur{smart_opt_wl_ind}(2,:);
+end
+
+% All variables used during optimization
 Performance.consecutive_cnts_threshold = consecutive_cnts_threshold;
 Performance.Max_Min_Thr = Max_Min_Thr;
 Performance.CVO = CVO;
@@ -915,15 +965,6 @@ Performance.roc_measures = roc_measures;
 Performance.roc_X_Y_Thr = roc_X_Y_Thr;
 Performance.roc_OPT_AUC = roc_OPT_AUC;
 
-Performance.eeg_svm_model = All_eeg_svm_model{smart_opt_wl_ind}(2,:);   % Only for Smart Features
-Performance.eeg_prob_estimates = All_eeg_prob_estimates{smart_opt_wl_ind}(2,:);
-Performance.eeg_decision = All_eeg_decision{smart_opt_wl_ind}(2,:);
-Performance.eeg_CM = squeeze(All_eeg_CM{smart_opt_wl_ind}(2,:,:,:));
-Performance.eeg_sensitivity = All_eeg_sensitivity{smart_opt_wl_ind}(2,:);
-Performance.eeg_specificity = All_eeg_specificity{smart_opt_wl_ind}(2,:);
-Performance.eeg_accur = All_eeg_accur{smart_opt_wl_ind}(2,:);
-
-% All variables used during optimization
 Performance.All_window_length_range = All_window_length_range;
 Performance.All_total_CM = All_total_CM;
 Performance.All_move_window = All_move_window;
@@ -952,32 +993,34 @@ Performance.All_eeg_accur = All_eeg_accur;
 %Performance.test_trial_signal_time =  test_trial_signal_time;
 
 file_identifier = [];
-% if use_conventional_features == 1
-%     file_identifier = [ file_identifier '_fixed'];
-% end
-% if use_smart_features == 1
-%     file_identifier = [ file_identifier '_smart'];
-% end
+if use_conventional_features == 1
+    file_identifier = [ file_identifier '_conventional'];
+end
+if use_smart_features == 1
+    file_identifier = [ file_identifier '_smart'];
+end
 % if use_shifting_window_CV == 1
 %     file_identifier = [ file_identifier '_online'];
 % else
 %     file_identifier = [ file_identifier '_offline'];
 % end
 
-filename2 = [folder_path Subject_name '_ses' num2str(Sess_num) '_cond' num2str(Cond_num) '_block' num2str(Block_num) '_performance_optimized' file_identifier '_causal.mat']; %datestr(now,'dd_mm_yy_HHMM')
+filename2 = [folder_path Subject_name '_ses' num2str(Sess_num) '_cond' num2str(Cond_num) '_block' num2str(Block_num) '_performance_optimized' file_identifier '.mat']; %datestr(now,'dd_mm_yy_HHMM')
 save(filename2,'Performance');   
 %% Plot sensitivity & specificity
 figure; 
-group_names = {'Online Fixed','Online Flexible'};
+group_names = {'Online Fixed','Fixed_old', 'Online Flexible'};
 online_fixed = Performance.All_eeg_accur{Performance.conv_opt_wl_ind}(1,:);
-online_variable = Performance.All_eeg_accur{Performance.smart_opt_wl_ind}(2,:);
+%online_variable = Performance.All_eeg_accur{Performance.smart_opt_wl_ind}(2,:);
+online_variable_old = prev_Performance.All_eeg_accur{prev_Performance.conv_opt_wl_ind}(1,:);
+online_variable = prev_Performance.All_eeg_accur{prev_Performance.smart_opt_wl_ind}(2,:);
 
 % filename3 = [folder_path Subject_name '_ses' num2str(Sess_num) '_cond' num2str(Cond_num) '_block80_performance_optimized_fixed_smart_offline_nic.mat'];
 % load(filename3);
 % offline_fixed = Performance.All_eeg_accur{Performance.conv_opt_wl_ind}(1,:);
 
 
-h = boxplot([online_fixed' online_variable'] ,'labels',group_names,'widths',0.5);
+h = boxplot([online_fixed' online_variable_old' online_variable'] ,'labels',group_names,'widths',0.5);
  set(h,'LineWidth',2);
 v = axis;
 axis([v(1) v(2) 0 100]);

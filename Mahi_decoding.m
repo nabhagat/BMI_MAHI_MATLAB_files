@@ -34,6 +34,9 @@
 % ?       - Need to add SVM training into this file, train_classifier
 % 11/4/14 - Added instructions to save emg_rest_epochs in the emg_epochs
 %                    variable
+% 1/2/15 - Changed baseline interval from [-3.5 -3.25] to [-2.5 -2.25].
+%                  Doesnot affect analysis because baseline correction is
+%                  only used for visualizing grand-average MRCP
 
 %--------------------------------------------------------------------------------------------------
 clear;
@@ -43,14 +46,14 @@ myColors = ['r','b','k','m','y','c','m','g','r','b','k','b','r','m','g','r','b',
     'g','r','b','k','y','c','m','g','r','b','k','b','r','m','g','r','b','k','y','c','m'];
 
 % EEG Channels used for identifying MRCP
-Channels_nos = [4, 38, 5, 39, 6, 43, 9, 32, 10, 44, 13, 48, 14, 49, 15, 52, 19, ... 
-                53, 20, 54, 24, 57, 25, 58, 26];    % 32 or 65 for FCz
+Channels_nos = [43, 9, 32, 10, 44, 13, 48, 14, 49, 15, 52, 19, ... 
+                53, 20, 54]; % removed P-channels = [24, 57, 25, 58, 26]; removed F-channels = [4, 38, 5, 39, 6];    % 32 or 65 for FCz
 
 % Subject Details 
-Subject_name = 'BNBO'; % change1
+Subject_name = 'PLSH'; % change1
 Sess_num = '2';               
 closeloop_Sess_num = '6';     
-Cond_num = 1;  % 1 - Active; 2 - Passive; 3 - Triggered; 4 - Observation 
+Cond_num = 3;  % 1 - Active; 2 - Passive; 3 - Triggered; 4 - Observation 
 Block_num = 160;
 
 folder_path = ['C:\NRI_BMI_Mahi_Project_files\All_Subjects\Subject_' Subject_name '\' Subject_name '_Session' num2str(Sess_num) '\']; % change2
@@ -64,7 +67,7 @@ use_GUI_for_testing = 1;    %change5
 
 if train_classifier == 1
     disp('******************** Training Model **********************************');
-    process_raw_eeg = 0;         % Also remove extra 'S  2' triggers
+    process_raw_eeg = 1;         % Also remove extra 'S  2' triggers
     process_raw_emg = 0; extract_emg_epochs = 0;
     extract_epochs = 1;     % extract move and rest epochs
   
@@ -155,17 +158,17 @@ end
 hpfc = 0.1;     % HPF Cutoff frequency = 0.1 Hz    
 lpfc = 1;      % LPF Cutoff frequency = 1 Hz
 use_noncausal_filter = 0; % 1 - yes, use zero-phase filtfilt(); 0 - No, use filter()            %change6
-use_fir_filter = 1; % change9
+use_fir_filter = 0; % change9
 
 %3. Extracting epochs
 move_trig_label = 'S 16';  % 'S 32'; %'S  8'; %'100';
 rest_trig_label = 'S  2';  % 'S  2'; %'200';
 target_reached_trig_label = 'S  8';
-move_epoch_dur = [-7 1.1]; % [-4 12.1];
-rest_epoch_dur = [-3.5 6.1];
+move_epoch_dur = [-7 1.6]; % [-4 12.1];
+rest_epoch_dur = [-3.5 1.6];
 
 %4. Working with Epochs
-baseline_int = [-3.5 -3.25];   
+baseline_int = [-2.5 -2.25];   
 apply_baseline_correction = 0;  % Always 0
 apply_epoch_standardization = 0;
 
@@ -1494,9 +1497,9 @@ end
 %separabiltiy_index;
 %% Plot ERPs
 if plot_ERPs == 1
-    figure; 
+    figure('Position',[50 300 6*116 3.5*116]); 
     %figure('units','normalized','outerposition',[0 0 1 1])
-    T_plot = tight_subplot(5,5,0.05,[0.1 0.1],[0.1 0.1]);
+    T_plot = tight_subplot(3,5,[0.08 0.05],[0.15 0.01],[0.1 0.01]);
     hold on;
     plot_ind4 = 1;
     
@@ -1507,9 +1510,11 @@ if plot_ERPs == 1
 %         end
         %subplot(5,5,plot_ind4);
         hold on;
-        plot(move_erp_time,move_avg_channels(Channels_nos(ind4),:),'b','LineWidth',2);
-        jbfill(move_erp_time,move_avg_channels(Channels_nos(ind4),:)+ (move_SE_channels(Channels_nos(ind4),:)),...
-           move_avg_channels(Channels_nos(ind4),:)- (move_SE_channels(Channels_nos(ind4),:)),'b','k',0,0.3);
+        plot(move_erp_time,move_avg_channels(Channels_nos(ind4),:),'k','LineWidth',2);
+        plot(move_erp_time,move_avg_channels(Channels_nos(ind4),:)+ (move_SE_channels(Channels_nos(ind4),:)),'-','Color',[0.4 0.4 0.4],'LineWidth',0.5);
+        plot(move_erp_time,move_avg_channels(Channels_nos(ind4),:) - (move_SE_channels(Channels_nos(ind4),:)),'-','Color',[0.4 0.4 0.4],'LineWidth',0.5);
+%         jbfill(move_erp_time,move_avg_channels(Channels_nos(ind4),:)+ (move_SE_channels(Channels_nos(ind4),:)),...
+%            move_avg_channels(Channels_nos(ind4),:)- (move_SE_channels(Channels_nos(ind4),:)),[1 1 1],'k',0,0.3);
 %         plot(rest_erp_time,rest_avg_channels(Channels_nos(RPind),:),'r','LineWidth',2);
 %         jbfill(rest_erp_time,rest_avg_channels(Channels_nos(RPind),:)+ (rest_SE_channels(Channels_nos(RPind),:)),...
 %            rest_avg_channels(Channels_nos(RPind),:)- (rest_SE_channels(Channels_nos(RPind),:)),'r','k',0,0.3);
@@ -1517,45 +1522,57 @@ if plot_ERPs == 1
         %plot(erp_time,move_avg_channels(Channels_nos(RPind),:),rest_time, rest_avg_channels(Channels_nos(RPind),:),'r','LineWidth',2);
         %plot(erp_time,preprocessed_move_epochs(Channels_nos(RPind),:),'b',erp_time,standardize_move_epochs(Channels_nos(RPind),:),'k',erp_time,rest_avg_channels(Channels_nos(RPind),:),'r','LineWidth',2);
         %plot(erp_time,move_avg_channels(Channels_nos(RPind),:),'r','LineWidth',2);
-        text(-1.5,2.5,[EEG.chanlocs(Channels_nos(ind4)).labels ', ' num2str(Channels_nos(ind4))],'Color','k','FontWeight','bold');
+        text(-2,-5,[EEG.chanlocs(Channels_nos(ind4)).labels],'Color','k','FontWeight','normal'); % ', ' num2str(Channels_nos(ind4))
         set(gca,'YDir','reverse');
         %if max(abs(move_avg_channels(Channels_nos(RPind),:))) <= 6
-         if max((move_avg_channels(Channels_nos(ind4),:)+(move_SE_channels(Channels_nos(ind4),:)))) >= 6 || ...
-                 min((move_avg_channels(Channels_nos(ind4),:)-(move_SE_channels(Channels_nos(ind4),:)))) <= -6
-            axis([move_erp_time(1) move_erp_time(end) -15 15]);
-            %axis([move_erp_time(1) 1 -6 6]);
-            set(gca,'FontWeight','bold');  
-            set(gca,'YTick',[-10 0 10]);
-            set(gca,'YTickLabel',{'-10'; '0'; '10'});
-        else
-            axis([move_erp_time(1) move_erp_time(end) -6 6]);
+%          if max((move_avg_channels(Channels_nos(ind4),:)+(move_SE_channels(Channels_nos(ind4),:)))) >= 6 || ...
+%                  min((move_avg_channels(Channels_nos(ind4),:)-(move_SE_channels(Channels_nos(ind4),:)))) <= -6
+%             axis([move_erp_time(1) move_erp_time(end) -15 15]);
+%             %axis([move_erp_time(1) 1 -6 6]);
+%             set(gca,'FontWeight','bold');  
+%             set(gca,'YTick',[-10 0 10]);
+%             set(gca,'YTickLabel',{'-10'; '0'; '10'});
+%         else
+            axis([-2.5 1.5 -6 3]);
             %axis([move_erp_time(1) 1 -15 15]);
             set(gca,'YTick',[-5 0 5]);
-            set(gca,'YTickLabel',{'-5'; '0'; '5'});
-        end
-        line([0 0],[-30 30],'Color','k','LineWidth',2);  
+            set(gca,'YTickLabel',{'-5'; '0'; '5'},'FontWeight','normal');
+%        end
+        line([0 0],[-10 10],'Color','k','LineWidth',1);  
         plot_ind4 = plot_ind4 + 1;
-        grid on;
+    %    grid on;
     %     xlabel('Time (sec.)')
     %     ylabel('Voltage (\muV)');
-        set(gca,'XTick',[-6 -4 -2 0]);
-        set(gca,'XTickLabel',{'-6'; '-4'; '-2'; '0'});  
+        set(gca,'XTick',[-2 -1 0 1]);
+        set(gca,'XTickLabel',{'-2';'-1'; '0';'1'});  
           
     end
 
     % subplot(4,3,5);
     % topoplot([],EEG.chanlocs,'style','blank','electrodes','labels','chaninfo',EEG.chaninfo);
     %subplot(5,5,8);
-    axes(T_plot(8));
+    axes(T_plot(11));
     hold on;
-    xlabel('\bfTime (sec.)', 'FontSize', 12);
-    ylabel('\bfVoltage (\muV)','FontSize', 12);
+    xlabel('Time (sec.)', 'FontSize', 12);
+    hylabel = ylabel('EEG (\muV)','FontSize', 12, 'rotation',90);
+    pos = get(hylabel,'Position');
+    
     %mtit(sprintf('Baseline Correction Interval: %6.1f to %6.1f sec',baseline_int(1),baseline_int(2)),'fontsize',14,'color',[0 0 0],'xoff',-.02,'yoff',.025);
-    mtit('LSGR, Left hand, Triggered Mode, Day 1','fontsize',14,'yoff',0.025);
+    %mtit('LSGR, Left hand, Triggered Mode, Day 1','fontsize',14,'yoff',0.025);
     %title(sprintf('Baseline Correction Interval: %6.1f to %6.1f sec',baseline_int(1),baseline_int(2)));
     %legend('Average RP','Movement Onset','Orientation','Horizontal');
     %export_fig MS_ses1_cond1_block80_Average '-png' '-transparent';
-  
+    
+    response = input('Save figure to folder [y/n]: ','s');
+    if strcmp(response,'y')
+         tiff_filename = ['C:\NRI_BMI_Mahi_Project_files\Figures_for_paper\' Subject_name '_ses' num2str(Sess_num) '_cond' num2str(Cond_num) '_block' num2str(Block_num) '_MRCP_grand_average.tif'];
+         fig_filename = ['C:\NRI_BMI_Mahi_Project_files\Figures_for_paper\' Subject_name '_ses' num2str(Sess_num) '_cond' num2str(Cond_num) '_block' num2str(Block_num) '_MRCP_grand_average.fig'];
+        print('-dtiff', '-r300', tiff_filename); 
+        saveas(gcf,fig_filename);
+    else
+        disp('Save figure aborted');
+    end
+    
     %% ERP image plots
 %     mt1 = 101;  
 %     peak_times = move_erp_time(mt1 + min_avg(:,2));
@@ -1650,7 +1667,7 @@ if manipulate_epochs == 1
       file_identifier = [ file_identifier '_causal'];
    end
 
-   filename1 = [folder_path Subject_name '_ses' num2str(Sess_num) '_cond' num2str(Cond_num) '_block' num2str(Block_num) '_average' file_identifier '_fir.mat'];
+   filename1 = [folder_path Subject_name '_ses' num2str(Sess_num) '_cond' num2str(Cond_num) '_block' num2str(Block_num) '_average' file_identifier '.mat'];
    save(filename1,'Average');   
 end
 %% LDA Classifier training & validation
