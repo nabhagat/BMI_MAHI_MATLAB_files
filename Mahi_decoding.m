@@ -50,11 +50,11 @@ Channels_nos = [43, 9, 32, 10, 44, 13, 48, 14, 49, 15, 52, 19, ...
                 53, 20, 54]; % removed P-channels = [24, 57, 25, 58, 26]; removed F-channels = [4, 38, 5, 39, 6];    % 32 or 65 for FCz
 
 % Subject Details 
-Subject_name = 'PLSH'; % change1
-Sess_num = '2';               
+Subject_name = 'LSGR'; % change1
+Sess_num = '2b';               
 closeloop_Sess_num = '6';     
 Cond_num = 3;  % 1 - Active; 2 - Passive; 3 - Triggered; 4 - Observation 
-Block_num = 160;
+Block_num = 140;
 
 folder_path = ['C:\NRI_BMI_Mahi_Project_files\All_Subjects\Subject_' Subject_name '\' Subject_name '_Session' num2str(Sess_num) '\']; % change2
 closeloop_folder_path = ['C:\NRI_BMI_Mahi_Project_files\All_Subjects\Subject_' Subject_name '\' Subject_name '_Session' num2str(closeloop_Sess_num) '\']; % change3
@@ -79,8 +79,8 @@ if train_classifier == 1
 
     %remove_corrupted_epochs = [ remove_corrupted_epochs 21 42 111 112 140 147]; %PLSH_ses2_cond1_block160
 
-    %remove_corrupted_epochs = [ remove_corrupted_epochs 41 43 52 54 59]; %LSGR_ses1_cond3
-    %remove_corrupted_epochs = [remove_corrupted_epochs 83];  % LSGR_ses2b_cond3
+    remove_corrupted_epochs = [ remove_corrupted_epochs 41 43 52 54 59]; %LSGR_ses1_cond3
+    remove_corrupted_epochs = [remove_corrupted_epochs 83];  % LSGR_ses2b_cond3
    
    %remove_corrupted_epochs = [41];  % JF_ses1_cond1
     
@@ -158,7 +158,7 @@ end
 hpfc = 0.1;     % HPF Cutoff frequency = 0.1 Hz    
 lpfc = 1;      % LPF Cutoff frequency = 1 Hz
 use_noncausal_filter = 0; % 1 - yes, use zero-phase filtfilt(); 0 - No, use filter()            %change6
-use_fir_filter = 0; % change9
+use_fir_filter = 0; % change7
 
 %3. Extracting epochs
 move_trig_label = 'S 16';  % 'S 32'; %'S  8'; %'100';
@@ -1553,8 +1553,8 @@ if plot_ERPs == 1
     %subplot(5,5,8);
     axes(T_plot(11));
     hold on;
-    xlabel('Time (sec.)', 'FontSize', 12);
-    hylabel = ylabel('EEG (\muV)','FontSize', 12, 'rotation',90);
+    xlabel('Time (sec.)', 'FontSize', 10);
+    hylabel = ylabel('EEG (\muV)','FontSize', 10, 'rotation',90);
     pos = get(hylabel,'Position');
     
     %mtit(sprintf('Baseline Correction Interval: %6.1f to %6.1f sec',baseline_int(1),baseline_int(2)),'fontsize',14,'color',[0 0 0],'xoff',-.02,'yoff',.025);
@@ -1562,6 +1562,13 @@ if plot_ERPs == 1
     %title(sprintf('Baseline Correction Interval: %6.1f to %6.1f sec',baseline_int(1),baseline_int(2)));
     %legend('Average RP','Movement Onset','Orientation','Horizontal');
     %export_fig MS_ses1_cond1_block80_Average '-png' '-transparent';
+    
+    % Expand axes to fill figure
+    fig = gcf;
+    style = hgexport('factorystyle');
+    style.Bounds = 'tight';
+    hgexport(fig,'-clipboard',style,'applystyle', true);
+    drawnow;
     
     response = input('Save figure to folder [y/n]: ','s');
     if strcmp(response,'y')
@@ -1827,7 +1834,7 @@ if test_classifier == 1
    % if ~isempty(instrfind)
         % set and open serial port
         %obj = serial('com1','baudrate',115200,'parity','none','databits',8,'stopbits',1);   %InMotion
-        obj = serial('com20','baudrate',19200,'parity','none','databits',8,'stopbits',1); %Mahi               % change7
+        obj = serial('com20','baudrate',19200,'parity','none','databits',8,'stopbits',1); %Mahi               % change9
         fopen(obj);
     %else
        % obj = -1;
