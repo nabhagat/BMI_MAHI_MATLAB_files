@@ -37,7 +37,8 @@
 % 1/2/15 - Changed baseline interval from [-3.5 -3.25] to [-2.5 -2.25].
 %                  Doesnot affect analysis because baseline correction is
 %                  only used for visualizing grand-average MRCP
-
+% 1/27/15 - Calculate t-value for 95% confidence interval using the number
+%                    of trials 
 %--------------------------------------------------------------------------------------------------
 clear;
 %close all;
@@ -50,11 +51,11 @@ Channels_nos = [43, 9, 32, 10, 44, 13, 48, 14, 49, 15, 52, 19, ...
                 53, 20, 54]; % removed P-channels = [24, 57, 25, 58, 26]; removed F-channels = [4, 38, 5, 39, 6];    % 32 or 65 for FCz
 
 % Subject Details 
-Subject_name = 'LSGR'; % change1
-Sess_num = '2b';               
+Subject_name = 'BNBO'; % change1
+Sess_num = '2';               
 closeloop_Sess_num = '6';     
 Cond_num = 3;  % 1 - Active; 2 - Passive; 3 - Triggered; 4 - Observation 
-Block_num = 140;
+Block_num = 160;
 
 folder_path = ['C:\NRI_BMI_Mahi_Project_files\All_Subjects\Subject_' Subject_name '\' Subject_name '_Session' num2str(Sess_num) '\']; % change2
 closeloop_folder_path = ['C:\NRI_BMI_Mahi_Project_files\All_Subjects\Subject_' Subject_name '\' Subject_name '_Session' num2str(closeloop_Sess_num) '\']; % change3
@@ -67,9 +68,9 @@ use_GUI_for_testing = 1;    %change5
 
 if train_classifier == 1
     disp('******************** Training Model **********************************');
-    process_raw_eeg = 1;         % Also remove extra 'S  2' triggers
+    process_raw_eeg = 0;         % Also remove extra 'S  2' triggers
     process_raw_emg = 0; extract_emg_epochs = 0;
-    extract_epochs = 1;     % extract move and rest epochs
+    extract_epochs = 0;     % extract move and rest epochs
   
     % Used during extracting epochs for removing corrupted epochs. The numbers of corrupted epochs 
     % must be known in advance. Otherwise declare remove_corrupted_epochs = [];
@@ -79,8 +80,8 @@ if train_classifier == 1
 
     %remove_corrupted_epochs = [ remove_corrupted_epochs 21 42 111 112 140 147]; %PLSH_ses2_cond1_block160
 
-    remove_corrupted_epochs = [ remove_corrupted_epochs 41 43 52 54 59]; %LSGR_ses1_cond3
-    remove_corrupted_epochs = [remove_corrupted_epochs 83];  % LSGR_ses2b_cond3
+    %remove_corrupted_epochs = [ remove_corrupted_epochs 41 43 52 54 59]; %LSGR_ses1_cond3
+    %remove_corrupted_epochs = [remove_corrupted_epochs 83];  % LSGR_ses2b_cond3
    
    %remove_corrupted_epochs = [41];  % JF_ses1_cond1
     
@@ -1425,11 +1426,15 @@ for epoch_cnt = 1:no_epochs
     end
 end
 
+% Determine t-statistics for 95% C.I.
+%http://www.mathworks.com/matlabcentral/answers/20373-how-to-obtain-the-t-value-of-the-students-t-distribution-with-given-alpha-df-and-tail-s
+deg_freedom = no_epochs - 1;
+t_value = tinv(1 - 0.05/2, deg_freedom);
 
 for channel_cnt = 1:no_channels
     rest_avg_channels(channel_cnt,:) =  mean(rest_epochs_with_base_correct(:,:,channel_cnt));
     rest_std_channels(channel_cnt,:) =  std(rest_epochs_with_base_correct(:,:,channel_cnt));
-    rest_SE_channels(channel_cnt,:) = 1.96.*std(rest_epochs_with_base_correct(:,:,channel_cnt))/sqrt(no_epochs);
+    rest_SE_channels(channel_cnt,:) = t_value.*std(rest_epochs_with_base_correct(:,:,channel_cnt))/sqrt(no_epochs);
 end
 % Update EEGLAB window
     [ALLEEG EEG CURRENTSET] = eeg_store(ALLEEG, EEG);
@@ -1486,7 +1491,7 @@ for channel_cnt = 1:no_channels
 %     move_SE_channels(channel_cnt,:) = 1.96.*std(move_epochs(:,:,channel_cnt))/sqrt(no_epochs);
     move_avg_channels(channel_cnt,:) =  mean(move_epochs_with_base_correct(:,:,channel_cnt));
     move_std_channels(channel_cnt,:) =  std(move_epochs_with_base_correct(:,:,channel_cnt));
-    move_SE_channels(channel_cnt,:) = 1.96.*std(move_epochs_with_base_correct(:,:,channel_cnt))/sqrt(no_epochs);
+    move_SE_channels(channel_cnt,:) = t_value.*std(move_epochs_with_base_correct(:,:,channel_cnt))/sqrt(no_epochs);
 end
 
 % Update EEGLAB window
@@ -1513,6 +1518,10 @@ if plot_ERPs == 1
         plot(move_erp_time,move_avg_channels(Channels_nos(ind4),:),'k','LineWidth',2);
         plot(move_erp_time,move_avg_channels(Channels_nos(ind4),:)+ (move_SE_channels(Channels_nos(ind4),:)),'-','Color',[0.4 0.4 0.4],'LineWidth',0.5);
         plot(move_erp_time,move_avg_channels(Channels_nos(ind4),:) - (move_SE_channels(Channels_nos(ind4),:)),'-','Color',[0.4 0.4 0.4],'LineWidth',0.5);
+%         plot(rest_erp_time,rest_avg_channels(Channels_nos(ind4),:),'r','LineWidth',2);
+%         plot(rest_erp_time,rest_avg_channels(Channels_nos(ind4),:)+ (rest_SE_channels(Channels_nos(ind4),:)),'-','Color',[1 0 0],'LineWidth',0.5);
+%         plot(rest_erp_time,rest_avg_channels(Channels_nos(ind4),:) - (rest_SE_channels(Channels_nos(ind4),:)),'-','Color',[1 0 0],'LineWidth',0.5);
+%         
 %         jbfill(move_erp_time,move_avg_channels(Channels_nos(ind4),:)+ (move_SE_channels(Channels_nos(ind4),:)),...
 %            move_avg_channels(Channels_nos(ind4),:)- (move_SE_channels(Channels_nos(ind4),:)),[1 1 1],'k',0,0.3);
 %         plot(rest_erp_time,rest_avg_channels(Channels_nos(RPind),:),'r','LineWidth',2);

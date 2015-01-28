@@ -20,10 +20,10 @@ myColors = ['g','r','m','k','y','c','m','g','r','b','k','b','r','m','g','r','b',
     'g','r','b','k','y','c','m','g','r','b','k','b','r','m','g','r','b','k','y','c','m'];
 
 % Subject Details
-Subject_name = 'LSGR';
-Sess_num = '2b';
-Cond_num = 3;  % 1 - Active; 2 - Passive; 3 - Triggered; 4 - Observation 
-Block_num = 140;
+Subject_name = 'BNBO';
+Sess_num = '2';
+Cond_num = 1;  % 1 - Active; 2 - Passive; 3 - Triggered; 4 - Observation 
+Block_num = 160;
 
 folder_path = ['C:\NRI_BMI_Mahi_Project_files\All_Subjects\Subject_' Subject_name '\' Subject_name '_Session' num2str(Sess_num) '\']; % change2
 load([folder_path Subject_name '_ses' num2str(Sess_num) '_cond' num2str(Cond_num) '_block' num2str(Block_num) '_average_causal.mat']);      % Always use causal for training classifier
@@ -80,10 +80,25 @@ downsamp_factor = Average.Fs_eeg/Fs_eeg;
 
 %0. Use previously trained models? Ex: CVO, smart_features, etc. 
 use_previous_models = 1;    
+regular_or_chance_level_classifier = 0; % 0 - chance_level; 1 - Regular classifier design
+use_conventional_features = 1;              % change                              
+use_smart_features = 0;
 
 if use_previous_models == 1
-    prev_Performance = importdata([folder_path Subject_name '_ses' num2str(Sess_num) '_cond' num2str(Cond_num) ...
-        '_block' num2str(Block_num) '_performance_optimized_causal.mat']);  
+    if regular_or_chance_level_classifier == 1
+        prev_Performance = importdata([folder_path Subject_name '_ses' num2str(Sess_num) '_cond' num2str(Cond_num) ...
+            '_block' num2str(Block_num) '_performance_optimized_causal.mat']);  
+    elseif regular_or_chance_level_classifier == 0
+        if use_conventional_features == 1
+            prev_Performance = importdata([folder_path Subject_name '_ses' num2str(Sess_num) '_cond' num2str(Cond_num) ...
+                '_block' num2str(Block_num) '_performance_optimized_conventional.mat']);
+            classification_error = 1 - mean(prev_Performance.All_eeg_accur{prev_Performance.conv_opt_wl_ind})/100;
+        elseif use_smart_features == 1
+            prev_Performance = importdata([folder_path Subject_name '_ses' num2str(Sess_num) '_cond' num2str(Cond_num) ...
+                '_block' num2str(Block_num) '_performance_optimized_causal.mat']);
+            classification_error = 1 - mean(prev_Performance.eeg_accur)/100;
+        end
+    end
 end
     
 %1. Classifier Channels
@@ -106,8 +121,6 @@ end
     hybrid_classifier = 0;
 
 %3. Use Smart/Conventional features
-    use_conventional_features = 1;              % change                              
-    use_smart_features = 0;
     keep_bad_trials = 0;   % Remove bad trials only from Smart Features
     % Find peak within interval, Reject trials reject_trial_onwards 
     find_peak_interval = [-2.0 0.5];            % ranges up to 0.5 sec after movement onset because of phase delay filtering
@@ -143,6 +156,8 @@ end
 % Compute Spatial Average (Mean Filtering) of chosen classifier channels
     move_ch_avg = mean(move_epochs_s(:,:,classchannels),3);
     rest_ch_avg = mean(rest_epochs_s(:,:,classchannels),3);
+    
+if regular_or_chance_level_classifier == 1
        
 %5. Window Length Optimization Loop Starts -----------------------------    
 window_length_range = [10:20]; %round(0.6*Fs_eeg); %[1:17]; 
@@ -1036,6 +1051,411 @@ title([Subject_name ', Mode ' num2str(Cond_num)],'FontSize',12);
 %     title('Offline Validation','FontSize',12);
 %     %mtit('Offline Validation','fontsize',12,'color',[0 0 1],'xoff',0,'yoff',-1.15);
 % end
+
+elseif regular_or_chance_level_classifier == 0
+% Estimate chance level performance by permutation of labels and data
+    for use_feature = loop_start:loop_end
+        if use_feature == 1     % Conventional Features
+             good_trials_move_ch_avg = move_ch_avg;
+             good_trials_rest_ch_avg = rest_ch_avg;
+             apply_scaling_for_SVM = 0;                                                     % Do not apply scaling; improves accuracy. Added by Nikunj - 1/3/2015
+             classifier_dataset = prev_Performance.Conventional_Features; 
+             test_Cov_Mat = prev_Performance.All_conv_Cov_Mat{prev_Performance.conv_opt_wl_ind};
+             test_Mu_move = prev_Performance.All_conv_Mu_move{prev_Performance.conv_opt_wl_ind};
+             window_length = round(prev_Performance.conv_window_length*Fs_eeg);
+             
+        elseif use_feature == 2 % Smart Features
+            good_move_trials = prev_Performance.good_move_trials;
+            good_trials_move_ch_avg = move_ch_avg(good_move_trials,:);
+            good_trials_rest_ch_avg = rest_ch_avg(good_move_trials,:);
+            apply_scaling_for_SVM = 0;
+            classifier_dataset = prev_Performance.Smart_Features;
+            test_Cov_Mat = prev_Performance.smart_Cov_Mat;
+            test_Mu_move = prev_Performance.smart_Mu_move;
+            window_length = round(prev_Performance.smart_window_length*Fs_eeg);
+            
+        end
+        original_dataset = classifier_dataset;
+        num_permutations = 1000;
+        class_labels_permutations = zeros(size(classifier_dataset,1),num_permutations);
+        Chance_accuracy_permutations_labels = zeros(num_permutations,1);
+        Chance_cv_accur_permutations_labels = zeros(num_permutations,10);
+        
+        Chance_accuracy_permutations_data = zeros(num_permutations,1);
+        Chance_cv_accur_permutations_data = zeros(num_permutations,10);
+        
+        for M1 = 1:num_permutations % Number of permutations
+               class_labels_permutations(:,M1) =  randperm(size(classifier_dataset,1));
+               classifier_dataset = classifier_dataset(class_labels_permutations(:,M1),:);
+               no_epochs = round(size(classifier_dataset,1)/2);        
+               CVO = cvpartition(no_epochs,'kfold',10);
+               data_set_labels = [ones(no_epochs,1); 2*ones(no_epochs,1)]; %Classifier labels 1 - Go, 2 - No-Go 
+
+            % 1. Scale data set between minval to maxval
+                if  apply_scaling_for_SVM == 1
+                    [nr,nc] = size(classifier_dataset);
+                    scale_range = zeros(2,nc);
+                    for k = 1:nc
+                        attribute = classifier_dataset(:,k);
+                        scale_range(:,k) = [min(attribute); max(attribute)];
+                        attribute = ((attribute - scale_range(1,k))./((scale_range(2,k) - scale_range(1,k))))*(maxval_SVM_scaling - minval_SVM_scaling) + minval_SVM_scaling;
+                        classifier_dataset(:,k) = attribute;
+                    end
+                end    
+
+            % 2. Create sparse matrix
+                features_sparse = sparse(classifier_dataset);           
+
+            % 3. Hyperparameter Optimization (C,gamma) via Grid Search
+                %CV_grid = zeros(3,length(C)*length(gamma));
+                CV_grid = [];
+                for i = 1:length(C)
+                    for j = 1:length(gamma)
+                        CV_grid = [CV_grid [C(i) ; gamma(j); svmtrain(data_set_labels, features_sparse, ['-t ' num2str(kernel_type)...
+                            ' -c ' num2str(C(i)) ' -g ' num2str(gamma(j)) ' -v 10'])]]; % C-SVC 
+                    end
+                end
+                [hyper_m,hyper_i] = max(CV_grid(3,:)); 
+                C_opt(use_feature) = CV_grid(1,hyper_i);
+                gamma_opt(use_feature) = CV_grid(2,hyper_i);
+
+            % 4. Train SVM model and cross-validate
+                for cv_index = 1:CVO.NumTestSets
+                    trIdx = CVO.training(cv_index);
+                    teIdx = CVO.test(cv_index);
+
+                     eeg_svm_model{use_feature,cv_index} = ...
+                         svmtrain(data_set_labels([trIdx;trIdx],1), features_sparse([trIdx;trIdx],:),...
+                         ['-t ' num2str(kernel_type) ' -c ' num2str(C_opt(use_feature)) ' -g ' num2str(gamma_opt(use_feature)) ' -b 1']);
+
+                    if use_shifting_window_CV == 1
+                        % Sliding window validation 
+                        t1 = crossvalidation_trial_time(1);
+                        t2 = crossvalidation_trial_time(2);
+                        test_trials = [good_trials_move_ch_avg(teIdx==1,find(move_erp_time == t1):find(move_erp_time == t2));
+                                       good_trials_rest_ch_avg(teIdx==1,find(rest_erp_time == t1):find(rest_erp_time == t2))];                      
+                        test_trials_time = repmat(t1:1/Fs_eeg:t2,size(test_trials,1),1);
+                        test_trials_labels = data_set_labels([teIdx;teIdx],1);
+
+                        test_trial_decision = [];
+                        mean_test_trial_prob = [];
+                        test_trial_signal_window = [];
+                        test_trial_signal_time = [];
+                        for test_trial_no = 1:size(test_trials,1)
+                            for win_start = 1:(size(test_trials,2) - window_length)
+                                    test_trial_signal_window(win_start,:) = test_trials(test_trial_no,win_start:(window_length + win_start));
+                                    test_trial_signal_time(win_start,:) = test_trials_time(test_trial_no,win_start:(window_length + win_start));
+                            end
+                            % Calculate features for each signal window
+                            test_trial_data_set = [];
+                            %1. Slope
+                            test_trial_data_set = (test_trial_signal_window(:,end) - test_trial_signal_window(:,1))./(test_trial_signal_time(:,end) - test_trial_signal_time(:,1));                         
+
+                            %2. Negative Peak  
+                            test_trial_data_set = [test_trial_data_set min(test_trial_signal_window,[],2)];
+
+                            %3. Area under curve
+                            AUC_tt = zeros(size(test_trial_signal_window,1),1);
+                            for ind1 = 1:size(test_trial_signal_window,1)
+                                AUC_tt(ind1) = trapz(test_trial_signal_time(ind1,:),test_trial_signal_window(ind1,:));
+                            end
+                            test_trial_data_set = [test_trial_data_set AUC_tt];
+
+                            %4. Mahalanobis distance of each trial from average over trials
+                            test_mahal_dist = zeros(size(test_trial_signal_window,1),1);
+                            for d = 1:size(test_trial_signal_window,1)
+                                %test_mahal_dist(d) = sqrt(mahal(test_trial_signal_window(d,:),good_trials_move_ch_avg(trIdx,mlim1:mlim2)));
+
+                                % Direct Computation of Mahalanobis distance
+                                x = test_trial_signal_window(d,:);
+                                test_mahal_dist(d) = sqrt((x-test_Mu_move)/(test_Cov_Mat)*(x-test_Mu_move)');
+                            end
+                            test_trial_data_set = [test_trial_data_set test_mahal_dist];
+
+
+                            % Apply SVM classifier
+                            % T1. Scale data set between minval to maxval
+                            if  apply_scaling_for_SVM == 1
+                                [nr,nc] = size(test_trial_data_set);
+                                scale_range = zeros(2,nc);
+                                for k = 1:nc
+                                    attribute = test_trial_data_set(:,k);
+                                    scale_range(:,k) = [min(attribute); max(attribute)];
+                                    attribute = ((attribute - scale_range(1,k))./((scale_range(2,k) - scale_range(1,k))))*(maxval_SVM_scaling - minval_SVM_scaling) + minval_SVM_scaling;
+                                    test_trial_data_set(:,k) = attribute;
+                                end
+                            end    
+                            % T2. Create sparse matrix
+                             test_trial_data_set = sparse(test_trial_data_set);    
+                            % T3. SVM prediction
+                             [internal_decision,internal_acc, internal_prob] = svmpredict(repmat(test_trials_labels(test_trial_no),size(test_trial_data_set,1),1), test_trial_data_set, eeg_svm_model{use_feature,cv_index}, '-b 1');
+                             internal_decision(internal_prob(:,1) <= prob_est_threshold) = 2; %Should I use internal probability threshold? 
+
+                             %-----------Find consecutive 1's >= Threshold
+                             test_trial_decision(test_trial_no,:) = [0 0 0];
+                             % Initially, assign mean of probabilities for 'rest'
+                             % decisions. Change to mean of 'move' probabilities
+                             % after consecutive counts threshold is exceeded.
+                             mean_test_trial_prob(test_trial_no,:) = mean(internal_prob((internal_prob(:,1) <= prob_est_threshold),:),1); 
+                             mycounter = 0;
+                             for i = 2:length(internal_decision)
+                                 if (internal_decision(i)== 1) && (internal_decision(i-1)==1)
+                                     mycounter = mycounter+1;
+                                 else
+                                     mycounter = 0;
+                                 end
+                                 if mycounter >= consecutive_cnts_threshold - 1
+                                    test_trial_decision(test_trial_no,:) = [1 test_trial_signal_time(i,end) 0];
+                                    mean_test_trial_prob(test_trial_no,:) =  mean(internal_prob(i-mycounter:i,:),1);          % changed consecutive_cnts_threshold to mycounter, Nikunj - 6/28/14
+                                    break;
+                                 end
+                             end
+
+                             % Save information about number of signifcant
+                             % maxima-minima
+                             Max_Min_Thr = 1; % 3V
+                             t2 = find(test_trials_time(1,:)==test_trial_decision(test_trial_no,2));
+                             t1 = t2 - 1.5*Fs_eeg;  % Go back 1.5 sec
+                             if t1 < 1
+                                    test_trial_decision(test_trial_no,3) = NaN; % Overflow
+                             else
+                                [xmax,indmax,xmin,indmin] = extrema(test_trials(test_trial_no,t1:t2));
+                                ranges = abs(diff(test_trials(test_trial_no, sort([indmax indmin]))));
+                                test_trial_decision(test_trial_no,3) = length(find(ranges >= Max_Min_Thr));
+                             end
+
+                        end
+                        test_trial_decision(test_trial_decision(:,1) == 0,1) = 2;
+                        eeg_decision{use_feature,cv_index} = test_trial_decision(:,1);
+                        eeg_prob_estimates{use_feature,cv_index} = [mean_test_trial_prob test_trial_decision(:,2:3)]; % Time at which go was detected & No of significant abrupt changes
+                    else
+                        % Regular cross validation approach
+                        [eeg_decision{use_feature,cv_index}, accuracy, eeg_prob_estimates{use_feature,cv_index}] = svmpredict(data_set_labels([teIdx;teIdx],1), features_sparse([teIdx;teIdx],:), eeg_svm_model{use_feature,cv_index}, '-b 1');
+                   end
+
+                    eeg_CM(use_feature,:,:,cv_index) = confusionmat(data_set_labels([teIdx;teIdx],1),eeg_decision{use_feature,cv_index});
+                    eeg_sensitivity(use_feature,cv_index) = eeg_CM(use_feature,1,1,cv_index)/(eeg_CM(use_feature,1,1,cv_index)+eeg_CM(use_feature,1,2,cv_index));
+                    eeg_specificity(use_feature,cv_index) = eeg_CM(use_feature,2,2,cv_index)/(eeg_CM(use_feature,2,2,cv_index)+eeg_CM(use_feature,2,1,cv_index));
+                    eeg_accur(use_feature,cv_index) = (eeg_CM(use_feature,1,1,cv_index)+eeg_CM(use_feature,2,2,cv_index))/(eeg_CM(use_feature,1,1,cv_index)+eeg_CM(use_feature,1,2,cv_index)+eeg_CM(use_feature,2,1,cv_index)+eeg_CM(use_feature,2,2,cv_index))*100;   
+                end % end crossvalidation for loop
+            
+            % 5. Save values of chance level performance
+            Chance_accuracy_permutations_labels(M1) = mean(eeg_accur(use_feature,:));
+            Chance_cv_accur_permutations_labels(M1,:) = eeg_accur(use_feature,:);
+            
+        end % end permutations (M1) loop
+        
+        data_set_labels = [ones(no_epochs,1); 2*ones(no_epochs,1)]; %Classifier labels 1 - Go, 2 - No-Go 
+        for M2 = 1:num_permutations % Number of permutations
+               classifier_dataset = original_dataset;
+               [tot_trials,tot_features] = size(classifier_dataset);
+               class1_dataset = classifier_dataset(1:tot_trials/2,:);
+               class2_dataset = classifier_dataset(tot_trials/2 + 1:tot_trials,:);
+               classifier_dataset = [shake(class1_dataset,1);
+                                                     shake(class2_dataset,1)];
+               
+               no_epochs = round(size(classifier_dataset,1)/2);        
+               CVO = cvpartition(no_epochs,'kfold',10);
+               
+
+            % 1. Scale data set between minval to maxval
+                if  apply_scaling_for_SVM == 1
+                    [nr,nc] = size(classifier_dataset);
+                    scale_range = zeros(2,nc);
+                    for k = 1:nc
+                        attribute = classifier_dataset(:,k);
+                        scale_range(:,k) = [min(attribute); max(attribute)];
+                        attribute = ((attribute - scale_range(1,k))./((scale_range(2,k) - scale_range(1,k))))*(maxval_SVM_scaling - minval_SVM_scaling) + minval_SVM_scaling;
+                        classifier_dataset(:,k) = attribute;
+                    end
+                end    
+
+            % 2. Create sparse matrix
+                features_sparse = sparse(classifier_dataset);           
+
+            % 3. Hyperparameter Optimization (C,gamma) via Grid Search
+                %CV_grid = zeros(3,length(C)*length(gamma));
+                CV_grid = [];
+                for i = 1:length(C)
+                    for j = 1:length(gamma)
+                        CV_grid = [CV_grid [C(i) ; gamma(j); svmtrain(data_set_labels, features_sparse, ['-t ' num2str(kernel_type)...
+                            ' -c ' num2str(C(i)) ' -g ' num2str(gamma(j)) ' -v 10'])]]; % C-SVC 
+                    end
+                end
+                [hyper_m,hyper_i] = max(CV_grid(3,:)); 
+                C_opt(use_feature) = CV_grid(1,hyper_i);
+                gamma_opt(use_feature) = CV_grid(2,hyper_i);
+
+            % 4. Train SVM model and cross-validate
+                for cv_index = 1:CVO.NumTestSets
+                    trIdx = CVO.training(cv_index);
+                    teIdx = CVO.test(cv_index);
+
+                     eeg_svm_model{use_feature,cv_index} = ...
+                         svmtrain(data_set_labels([trIdx;trIdx],1), features_sparse([trIdx;trIdx],:),...
+                         ['-t ' num2str(kernel_type) ' -c ' num2str(C_opt(use_feature)) ' -g ' num2str(gamma_opt(use_feature)) ' -b 1']);
+
+                    if use_shifting_window_CV == 1
+                        % Sliding window validation 
+                        t1 = crossvalidation_trial_time(1);
+                        t2 = crossvalidation_trial_time(2);
+                        test_trials = [good_trials_move_ch_avg(teIdx==1,find(move_erp_time == t1):find(move_erp_time == t2));
+                                       good_trials_rest_ch_avg(teIdx==1,find(rest_erp_time == t1):find(rest_erp_time == t2))];                      
+                        test_trials_time = repmat(t1:1/Fs_eeg:t2,size(test_trials,1),1);
+                        test_trials_labels = data_set_labels([teIdx;teIdx],1);
+
+                        test_trial_decision = [];
+                        mean_test_trial_prob = [];
+                        test_trial_signal_window = [];
+                        test_trial_signal_time = [];
+                        for test_trial_no = 1:size(test_trials,1)
+                            for win_start = 1:(size(test_trials,2) - window_length)
+                                    test_trial_signal_window(win_start,:) = test_trials(test_trial_no,win_start:(window_length + win_start));
+                                    test_trial_signal_time(win_start,:) = test_trials_time(test_trial_no,win_start:(window_length + win_start));
+                            end
+                            % Calculate features for each signal window
+                            test_trial_data_set = [];
+                            %1. Slope
+                            test_trial_data_set = (test_trial_signal_window(:,end) - test_trial_signal_window(:,1))./(test_trial_signal_time(:,end) - test_trial_signal_time(:,1));                         
+
+                            %2. Negative Peak  
+                            test_trial_data_set = [test_trial_data_set min(test_trial_signal_window,[],2)];
+
+                            %3. Area under curve
+                            AUC_tt = zeros(size(test_trial_signal_window,1),1);
+                            for ind1 = 1:size(test_trial_signal_window,1)
+                                AUC_tt(ind1) = trapz(test_trial_signal_time(ind1,:),test_trial_signal_window(ind1,:));
+                            end
+                            test_trial_data_set = [test_trial_data_set AUC_tt];
+
+                            %4. Mahalanobis distance of each trial from average over trials
+                            test_mahal_dist = zeros(size(test_trial_signal_window,1),1);
+                            for d = 1:size(test_trial_signal_window,1)
+                                %test_mahal_dist(d) = sqrt(mahal(test_trial_signal_window(d,:),good_trials_move_ch_avg(trIdx,mlim1:mlim2)));
+
+                                % Direct Computation of Mahalanobis distance
+                                x = test_trial_signal_window(d,:);
+                                test_mahal_dist(d) = sqrt((x-test_Mu_move)/(test_Cov_Mat)*(x-test_Mu_move)');
+                            end
+                            test_trial_data_set = [test_trial_data_set test_mahal_dist];
+
+
+                            % Apply SVM classifier
+                            % T1. Scale data set between minval to maxval
+                            if  apply_scaling_for_SVM == 1
+                                [nr,nc] = size(test_trial_data_set);
+                                scale_range = zeros(2,nc);
+                                for k = 1:nc
+                                    attribute = test_trial_data_set(:,k);
+                                    scale_range(:,k) = [min(attribute); max(attribute)];
+                                    attribute = ((attribute - scale_range(1,k))./((scale_range(2,k) - scale_range(1,k))))*(maxval_SVM_scaling - minval_SVM_scaling) + minval_SVM_scaling;
+                                    test_trial_data_set(:,k) = attribute;
+                                end
+                            end    
+                            % T2. Create sparse matrix
+                             test_trial_data_set = sparse(test_trial_data_set);    
+                            % T3. SVM prediction
+                             [internal_decision,internal_acc, internal_prob] = svmpredict(repmat(test_trials_labels(test_trial_no),size(test_trial_data_set,1),1), test_trial_data_set, eeg_svm_model{use_feature,cv_index}, '-b 1');
+                             internal_decision(internal_prob(:,1) <= prob_est_threshold) = 2; %Should I use internal probability threshold? 
+
+                             %-----------Find consecutive 1's >= Threshold
+                             test_trial_decision(test_trial_no,:) = [0 0 0];
+                             % Initially, assign mean of probabilities for 'rest'
+                             % decisions. Change to mean of 'move' probabilities
+                             % after consecutive counts threshold is exceeded.
+                             mean_test_trial_prob(test_trial_no,:) = mean(internal_prob((internal_prob(:,1) <= prob_est_threshold),:),1); 
+                             mycounter = 0;
+                             for i = 2:length(internal_decision)
+                                 if (internal_decision(i)== 1) && (internal_decision(i-1)==1)
+                                     mycounter = mycounter+1;
+                                 else
+                                     mycounter = 0;
+                                 end
+                                 if mycounter >= consecutive_cnts_threshold - 1
+                                    test_trial_decision(test_trial_no,:) = [1 test_trial_signal_time(i,end) 0];
+                                    mean_test_trial_prob(test_trial_no,:) =  mean(internal_prob(i-mycounter:i,:),1);          % changed consecutive_cnts_threshold to mycounter, Nikunj - 6/28/14
+                                    break;
+                                 end
+                             end
+
+                             % Save information about number of signifcant
+                             % maxima-minima
+                             Max_Min_Thr = 1; % 3V
+                             t2 = find(test_trials_time(1,:)==test_trial_decision(test_trial_no,2));
+                             t1 = t2 - 1.5*Fs_eeg;  % Go back 1.5 sec
+                             if t1 < 1
+                                    test_trial_decision(test_trial_no,3) = NaN; % Overflow
+                             else
+                                [xmax,indmax,xmin,indmin] = extrema(test_trials(test_trial_no,t1:t2));
+                                ranges = abs(diff(test_trials(test_trial_no, sort([indmax indmin]))));
+                                test_trial_decision(test_trial_no,3) = length(find(ranges >= Max_Min_Thr));
+                             end
+
+                        end
+                        test_trial_decision(test_trial_decision(:,1) == 0,1) = 2;
+                        eeg_decision{use_feature,cv_index} = test_trial_decision(:,1);
+                        eeg_prob_estimates{use_feature,cv_index} = [mean_test_trial_prob test_trial_decision(:,2:3)]; % Time at which go was detected & No of significant abrupt changes
+                    else
+                        % Regular cross validation approach
+                        [eeg_decision{use_feature,cv_index}, accuracy, eeg_prob_estimates{use_feature,cv_index}] = svmpredict(data_set_labels([teIdx;teIdx],1), features_sparse([teIdx;teIdx],:), eeg_svm_model{use_feature,cv_index}, '-b 1');
+                   end
+
+                    eeg_CM(use_feature,:,:,cv_index) = confusionmat(data_set_labels([teIdx;teIdx],1),eeg_decision{use_feature,cv_index});
+                    eeg_sensitivity(use_feature,cv_index) = eeg_CM(use_feature,1,1,cv_index)/(eeg_CM(use_feature,1,1,cv_index)+eeg_CM(use_feature,1,2,cv_index));
+                    eeg_specificity(use_feature,cv_index) = eeg_CM(use_feature,2,2,cv_index)/(eeg_CM(use_feature,2,2,cv_index)+eeg_CM(use_feature,2,1,cv_index));
+                    eeg_accur(use_feature,cv_index) = (eeg_CM(use_feature,1,1,cv_index)+eeg_CM(use_feature,2,2,cv_index))/(eeg_CM(use_feature,1,1,cv_index)+eeg_CM(use_feature,1,2,cv_index)+eeg_CM(use_feature,2,1,cv_index)+eeg_CM(use_feature,2,2,cv_index))*100;   
+                end % end crossvalidation for loop
+            
+            % 5. Save values of chance level performance
+            Chance_accuracy_permutations_data(M2) = mean(eeg_accur(use_feature,:));
+            Chance_cv_accur_permutations_data(M2,:) = eeg_accur(use_feature,:);
+            
+        end % end permutations (M2) loop
+        
+    end % end use_feature for loop
+
+    file_identifier = [];
+    if use_conventional_features == 1
+        file_identifier = [ file_identifier '_conventional'];
+    end
+    if use_smart_features == 1
+        file_identifier = [ file_identifier '_smart'];
+    end
+    % if use_shifting_window_CV == 1
+    %     file_identifier = [ file_identifier '_online'];
+    % else
+    %     file_identifier = [ file_identifier '_offline'];
+    % end
+
+    chance_level_permuted_labels_errors =  1 - (Chance_accuracy_permutations_labels./100);
+    chance_level_permuted_data_errors =  1 - (Chance_accuracy_permutations_data./100);
+    [Pcdf_labels,errors_labels] = ecdf(chance_level_permuted_labels_errors);
+    [Pcdf_data,errors_data] = ecdf(chance_level_permuted_data_errors);
+
+    figure; plot(errors_labels,Pcdf_labels);
+    axis([0 1 0 1]);
+    hold on; plot(errors_data,Pcdf_data,'r');
+    line([classification_error classification_error],[0 1],'Color',[0 0 0])
+
+    p_data_m1 = Pcdf_data(find(errors_data <= classification_error,1,'last'));
+    p_labels_m1 = Pcdf_labels(find(errors_labels <= classification_error,1,'last'));
+    if isempty(p_data_m1)
+        p_data_m1 = 0.0001;
+    end
+
+    if isempty(p_labels_m1)
+        p_labels_m1 = 0.0001;
+    end
+    p_data_m2 = (length(find(chance_level_permuted_data_errors <= classification_error)) + 1 )/ (num_permutations + 1);
+    p_labels_m2 = (length(find(chance_level_permuted_labels_errors <= classification_error)) + 1 )/ (num_permutations + 1);
+    
+    filename3 = [folder_path Subject_name '_ses' num2str(Sess_num) '_cond' num2str(Cond_num) '_block' num2str(Block_num) '_chance_level' file_identifier '2.mat']; %datestr(now,'dd_mm_yy_HHMM')
+    save(filename3,'Chance_accuracy_permutations_labels','Chance_cv_accur_permutations_labels','class_labels_permutations',...
+                                  'Chance_accuracy_permutations_data','Chance_cv_accur_permutations_data','p_data_m1','p_data_m2','p_labels_m1','p_labels_m2');        
+
+    
+end
+
 %% Old Save Results
 % Performance = [];
 % % Flags
