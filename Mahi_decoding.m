@@ -1515,9 +1515,9 @@ if plot_ERPs == 1
 %         end
         %subplot(5,5,plot_ind4);
         hold on;
-        plot(move_erp_time,move_avg_channels(Channels_nos(ind4),:),'k','LineWidth',2);
-        plot(move_erp_time,move_avg_channels(Channels_nos(ind4),:)+ (move_SE_channels(Channels_nos(ind4),:)),'-','Color',[0.4 0.4 0.4],'LineWidth',0.5);
-        plot(move_erp_time,move_avg_channels(Channels_nos(ind4),:) - (move_SE_channels(Channels_nos(ind4),:)),'-','Color',[0.4 0.4 0.4],'LineWidth',0.5);
+        plot(move_erp_time,move_avg_channels(Channels_nos(ind4),:),'k','LineWidth',1.5);
+        plot(move_erp_time,move_avg_channels(Channels_nos(ind4),:)+ (move_SE_channels(Channels_nos(ind4),:)),'-','Color',[0 0 0],'LineWidth',0.5);
+        plot(move_erp_time,move_avg_channels(Channels_nos(ind4),:) - (move_SE_channels(Channels_nos(ind4),:)),'-','Color',[0 0 0],'LineWidth',0.5);
 %         plot(rest_erp_time,rest_avg_channels(Channels_nos(ind4),:),'r','LineWidth',2);
 %         plot(rest_erp_time,rest_avg_channels(Channels_nos(ind4),:)+ (rest_SE_channels(Channels_nos(ind4),:)),'-','Color',[1 0 0],'LineWidth',0.5);
 %         plot(rest_erp_time,rest_avg_channels(Channels_nos(ind4),:) - (rest_SE_channels(Channels_nos(ind4),:)),'-','Color',[1 0 0],'LineWidth',0.5);
@@ -1544,16 +1544,18 @@ if plot_ERPs == 1
 %         else
             axis([-2.5 1.5 -6 3]);
             %axis([move_erp_time(1) 1 -15 15]);
-            set(gca,'YTick',[-5 0 5]);
-            set(gca,'YTickLabel',{'-5'; '0'; '5'},'FontWeight','normal');
+            set(gca,'YTick',[-5 0 2]);
+            set(gca,'YTickLabel',{'-5'; '0'; '+2'},'FontWeight','normal');
 %        end
-        line([0 0],[-10 10],'Color','k','LineWidth',1);  
+        line([0 0],[-10 10],'Color','k','LineWidth',0.5,'LineStyle','--');  
+        line([-2.5 1.5],[0 0],'Color','k','LineWidth',0.5,'LineStyle','--');  
         plot_ind4 = plot_ind4 + 1;
     %    grid on;
     %     xlabel('Time (sec.)')
     %     ylabel('Voltage (\muV)');
-        set(gca,'XTick',[-2 -1 0 1]);
-        set(gca,'XTickLabel',{'-2';'-1'; '0';'1'});  
+     %   set(gca,'XTick',[-2 -1 0 1]);
+     %   set(gca,'XTickLabel',{'-2';'-1'; '0';'1'});  
+        set(gca,'Visible','off');
           
     end
 
@@ -1561,10 +1563,24 @@ if plot_ERPs == 1
     % topoplot([],EEG.chanlocs,'style','blank','electrodes','labels','chaninfo',EEG.chaninfo);
     %subplot(5,5,8);
     axes(T_plot(11));
+    set(gca,'Visible','on');
+    bgcolor = get(gcf,'Color');
+    set(gca,'YColor',[1 1 1]);
+    set(gca,'XTick',[-2 -1 0 1]);
+    set(gca,'XTickLabel',{'-2';'-1'; 'MO';'1'});  
+    set(gca,'TickLength',[0.03 0.025])
     hold on;
     xlabel('Time (sec.)', 'FontSize', 10);
-    hylabel = ylabel('EEG (\muV)','FontSize', 10, 'rotation',90);
-    pos = get(hylabel,'Position');
+    
+    % Annotate line
+    axes_pos = get(gca,'Position'); %[lower bottom width height]
+    axes_ylim = get(gca,'Ylim');
+    annotate_length = (5*axes_pos(4))/(axes_ylim(2) - axes_ylim(1));
+    annotation(gcf,'line', [(axes_pos(1) - 0.025) (axes_pos(1) - 0.025)],...
+        [(axes_pos(2)+axes_pos(4) - annotate_length/5) (axes_pos(2)+axes_pos(4) - annotate_length - annotate_length/5)],'LineWidth',0.5);
+    
+    %hylabel = ylabel('EEG (\muV)','FontSize', 10, 'rotation',90);
+    %pos = get(hylabel,'Position');
     
     %mtit(sprintf('Baseline Correction Interval: %6.1f to %6.1f sec',baseline_int(1),baseline_int(2)),'fontsize',14,'color',[0 0 0],'xoff',-.02,'yoff',.025);
     %mtit('LSGR, Left hand, Triggered Mode, Day 1','fontsize',14,'yoff',0.025);

@@ -20,9 +20,9 @@ myColors = ['g','r','m','k','y','c','m','g','r','b','k','b','r','m','g','r','b',
     'g','r','b','k','y','c','m','g','r','b','k','b','r','m','g','r','b','k','y','c','m'];
 
 % Subject Details
-Subject_name = 'BNBO';
+Subject_name = 'PLSH';
 Sess_num = '2';
-Cond_num = 1;  % 1 - Active; 2 - Passive; 3 - Triggered; 4 - Observation 
+Cond_num = 3;  % 1 - Active; 2 - Passive; 3 - Triggered; 4 - Observation 
 Block_num = 160;
 
 folder_path = ['C:\NRI_BMI_Mahi_Project_files\All_Subjects\Subject_' Subject_name '\' Subject_name '_Session' num2str(Sess_num) '\']; % change2
@@ -80,9 +80,9 @@ downsamp_factor = Average.Fs_eeg/Fs_eeg;
 
 %0. Use previously trained models? Ex: CVO, smart_features, etc. 
 use_previous_models = 1;    
-regular_or_chance_level_classifier = 0; % 0 - chance_level; 1 - Regular classifier design
-use_conventional_features = 1;              % change                              
-use_smart_features = 0;
+regular_or_chance_level_classifier = 1; % 0 - chance_level; 1 - Regular classifier design
+use_conventional_features = 0;              % change                              
+use_smart_features = 1;
 
 if use_previous_models == 1
     if regular_or_chance_level_classifier == 1
@@ -118,7 +118,8 @@ end
     minval_SVM_scaling = 0;
 
 %-. Use Hybrid Classification
-    hybrid_classifier = 0;
+    use_svm_classifier = 0;
+    use_src_classifier = 1;
 
 %3. Use Smart/Conventional features
     keep_bad_trials = 0;   % Remove bad trials only from Smart Features
@@ -465,31 +466,6 @@ end
 %     hold off;
 % end
 %% --------------------------------- Classifier Training and Cross-validation
-%% Linear Discriminant Analysis
-% % no_epochs = size(move_ch_avg,1);
-% % CVO = cvpartition(no_epochs,'kfold',10);
-% % lda_sensitivity = zeros(1,CVO.NumTestSets);
-% % lda_specificity = zeros(1,CVO.NumTestSets);
-% % lda_accur = zeros(1,CVO.NumTestSets);
-% % % TPR = zeros(1,CVO.NumTestSets);
-% % % FPR = zeros(1,CVO.NumTestSets);
-% % 
-% % for cv_index = 1:CVO.NumTestSets
-% %     trIdx = CVO.training(cv_index);
-% %     teIdx = CVO.test(cv_index);
-% %     [test_labels, Error, Posterior, LogP, OutputCoefficients] = ...
-% %         classify(classifier_dataset([teIdx;teIdx],:),classifier_dataset([trIdx;trIdx],:),data_set_labels([trIdx;trIdx],1), 'linear');
-% % 
-% %     CM = confusionmat(data_set_labels([teIdx;teIdx],1),test_labels);
-% %     lda_sensitivity(cv_index) = CM(1,1)/(CM(1,1)+CM(1,2));
-% %     lda_specificity(cv_index) = CM(2,2)/(CM(2,2)+CM(2,1));
-% % %     TPR(cv_index) = CM(1,1)/(CM(1,1)+CM(1,2));
-% % %     FPR(cv_index) = CM(2,1)/(CM(2,2)+CM(2,1));
-% %     lda_accur(cv_index) = (CM(1,1)+CM(2,2))/(CM(1,1)+CM(1,2)+CM(2,1)+CM(2,2))*100;   
-% % end
-% % 
-% % %lda_avg_accuracy = mean(accur)
-%% Support Vector Machines Classifier for EEG
     
     for use_feature = loop_start:loop_end
         if use_feature == 1     % Conventional Features
@@ -519,7 +495,10 @@ end
 %         end
         data_set_labels = [ones(no_epochs,1); 2*ones(no_epochs,1)]; %Classifier labels 1 - Go, 2 - No-Go 
 
-    % 1. Scale data set between minval to maxval
+    % Support Vector Machines Classifier for EEG
+    if use_svm_classifier == 1
+        use_src_classifier = 0;
+        % SVM-1. Scale data set between minval to maxval
         if  apply_scaling_for_SVM == 1
             [nr,nc] = size(classifier_dataset);
             scale_range = zeros(2,nc);
@@ -530,12 +509,9 @@ end
                 classifier_dataset(:,k) = attribute;
             end
         end    
-
-    % 2. Create sparse matrix
+        % SVM-2. Create sparse matrix
         features_sparse = sparse(classifier_dataset);           
-
-    % 3. Hyperparameter Optimization (C,gamma) via Grid Search
-        %CV_grid = zeros(3,length(C)*length(gamma));
+        % SVM-3. Hyperparameter Optimization (C,gamma) via Grid Search
         CV_grid = [];
         for i = 1:length(C)
             for j = 1:length(gamma)
@@ -546,16 +522,46 @@ end
         [hyper_m,hyper_i] = max(CV_grid(3,:)); 
         C_opt(use_feature) = CV_grid(1,hyper_i);
         gamma_opt(use_feature) = CV_grid(2,hyper_i);
-
-    % 4. Train SVM model and cross-validate
+    end
+    
+    % Sparse Reconstruction Classifier for EEG
+    if use_src_classifier == 1
+        use_svm_classifier = 0;  
+        % Use classifier_dataset directly
+        % SRC-1. Hyperparameter Optimization (sparsity level) via Grid Search
+                for values = 5:1:30
+                    fold_CM = [];
+                    for cv_grid = 1:CVO.NumTestSets
+                        grid_trIdx = CVO.training(cv_grid);
+                        grid_teIdx = CVO.test(cv_grid);
+                        
+                        fold_test_labels = srclassifier(classifier_dataset([grid_trIdx;grid_trIdx],:)',classifier_dataset([grid_teIdx;grid_teIdx],:)',data_set_labels([grid_trIdx;grid_trIdx],1)','OMP',...
+                                                        values);
+                        fold_CM(:,:,cv_grid) = confusionmat(data_set_labels([grid_teIdx;grid_teIdx],1), fold_test_labels);                        
+                    end
+                    sparsity_levels(values) = sum(diag( sum(fold_CM,3)))/sum(sum( sum(fold_CM,3)));
+                end
+                [opt_sparsity_value(use_feature),opt_sparsity_level(use_feature)] = max(sparsity_levels);
+    end
+        
+    % Train classifier model and cross-validate
         for cv_index = 1:CVO.NumTestSets
             trIdx = CVO.training(cv_index);
             teIdx = CVO.test(cv_index);
-
-             eeg_svm_model{use_feature,cv_index} = ...
-                 svmtrain(data_set_labels([trIdx;trIdx],1), features_sparse([trIdx;trIdx],:),...
-                 ['-t ' num2str(kernel_type) ' -c ' num2str(C_opt(use_feature)) ' -g ' num2str(gamma_opt(use_feature)) ' -b 1']);
-
+            
+            % Do grid search here ----------------------------       
+            
+            if use_svm_classifier == 1
+                eeg_svm_model{use_feature,cv_index} = ...
+                    svmtrain(data_set_labels([trIdx;trIdx],1), features_sparse([trIdx;trIdx],:),...
+                    ['-t ' num2str(kernel_type) ' -c ' num2str(C_opt(use_feature)) ' -g ' num2str(gamma_opt(use_feature)) ' -b 1']);
+            end
+            
+            if use_src_classifier == 1
+                % Not required to train SRC model. Directly perform
+                % cross-validation. What??????             
+            end
+            
             if use_shifting_window_CV == 1
                 % Sliding window validation 
                 t1 = crossvalidation_trial_time(1);
@@ -602,8 +608,9 @@ end
 
 
                     % Apply SVM classifier
-                    % T1. Scale data set between minval to maxval
-                    if  apply_scaling_for_SVM == 1
+                    if use_svm_classifier == 1
+                        % SVM-b1. Scale data set between minval to maxval
+                        if  apply_scaling_for_SVM == 1
                         [nr,nc] = size(test_trial_data_set);
                         scale_range = zeros(2,nc);
                         for k = 1:nc
@@ -612,13 +619,20 @@ end
                             attribute = ((attribute - scale_range(1,k))./((scale_range(2,k) - scale_range(1,k))))*(maxval_SVM_scaling - minval_SVM_scaling) + minval_SVM_scaling;
                             test_trial_data_set(:,k) = attribute;
                         end
-                    end    
-                    % T2. Create sparse matrix
-                     test_trial_data_set = sparse(test_trial_data_set);    
-                    % T3. SVM prediction
-                     [internal_decision,internal_acc, internal_prob] = svmpredict(repmat(test_trials_labels(test_trial_no),size(test_trial_data_set,1),1), test_trial_data_set, eeg_svm_model{use_feature,cv_index}, '-b 1');
-                     internal_decision(internal_prob(:,1) <= prob_est_threshold) = 2; %Should I use internal probability threshold? 
+                        end    
+                        % SVM-b2. Create sparse matrix
+                        test_trial_data_set_sparse = sparse(test_trial_data_set);    
+                        % SVM-b3. SVM prediction
+                        [internal_decision,internal_acc, internal_prob] = svmpredict(repmat(test_trials_labels(test_trial_no),size(test_trial_data_set_sparse,1),1), test_trial_data_set_sparse, eeg_svm_model{use_feature,cv_index}, '-b 1');
+                        internal_decision(internal_prob(:,1) <= prob_est_threshold) = 2; %Should I use internal probability threshold?
+                    end
 
+                     % Apply SRC classifier
+                     if use_src_classifier == 1
+                        internal_decision = srclassifier(classifier_dataset',test_trial_data_set',data_set_labels','OMP',opt_sparsity_level(use_feature));
+                        internal_prob = ones(length(internal_decision),1);
+                     end
+                                        
                      %-----------Find consecutive 1's >= Threshold
                      test_trial_decision(test_trial_no,:) = [0 0 0];
                      % Initially, assign mean of probabilities for 'rest'
@@ -681,9 +695,17 @@ All_conv_Cov_Mat{wl} = conv_Cov_Mat;
 All_conv_Mu_move{wl} = conv_Mu_move;
 All_smart_Cov_Mat{wl} = smart_Cov_Mat;
 All_smart_Mu_move{wl} = smart_Mu_move;
-All_C_opt(wl,:) = C_opt;
-All_gamma_opt(wl,:) = gamma_opt;
-All_eeg_svm_model{wl} = eeg_svm_model;
+if use_svm_classifier == 1
+    All_C_opt(wl,:) = C_opt;
+    All_gamma_opt(wl,:) = gamma_opt;
+    All_eeg_svm_model{wl} = eeg_svm_model;
+end
+
+if use_src_classifier == 1
+    All_opt_sparsity_value(wl,:) = opt_sparsity_value;
+    All_opt_sparsity_level(wl,:) = opt_sparsity_level;
+end
+    
 All_eeg_prob_estimates{wl} = eeg_prob_estimates;
 All_eeg_decision{wl} = eeg_decision;
 All_eeg_CM{wl} = eeg_CM;
@@ -693,7 +715,8 @@ All_eeg_specificity{wl} = eeg_specificity;
 All_eeg_accur{wl} = eeg_accur;
 end % end window_length for loop
 %% Plot ROC Curve and determine optimal window length for smart and
-if length(window_length_range) > 1
+if use_svm_classifier == 1
+    if length(window_length_range) > 1
     for use_feature = loop_start:loop_end              
        % Choose optimal_wl
        for roc_wl = 1:length(window_length_range) 
@@ -785,6 +808,37 @@ else
                      trace(wl_CM)/sum(sum(wl_CM))]; 
    roc_OPT_AUC = []; 
    roc_X_Y_Thr = []; 
+    end
+end
+
+if use_src_classifier == 1
+    SVM_accuracy = prev_Performance.eeg_accur';
+    SVM_opt_window_length = prev_Performance.smart_window_length;
+    SRC_accuracies = [];
+    for wl = 1:length(window_length_range)
+        SRC_accuracies = [SRC_accuracies All_eeg_accur{wl}(2,:)'];
+    end
+    figure;
+    group_labels = [window_length_range/Fs_eeg SVM_opt_window_length];
+    boxplot([SRC_accuracies SVM_accuracy],'plotstyle','traditional','widths',0.5,'labelorientation','horizontal','symbol','ko','colors','rb',...
+                                                                                                                                     'positions',[1:length(window_length_range) length(window_length_range)+3],'labels',group_labels);
+    ylim([0 110]);
+    set(gca,'Ytick',[0:10:100],'Ygrid','on');
+    xlabel('Window lengths (sec.)');
+    ylabel('Classifier Accuracy (%)');
+    title([Subject_name ', Cond ' num2str(Cond_num)]);
+    src_smart_optimal_window_length = input('Enter SRC Optimal Window Length (Smart Features): ');
+    src_smart_opt_wl_ind = find(window_length_range./Fs_eeg == src_smart_optimal_window_length);
+    %fprintf('For window length = %.2f, sparsity level = %.2f \n',src_smart_optimal_window_length, All_opt_sparsity_level(src_smart_opt_wl_ind,use_feature));
+    title([Subject_name ', Cond ' num2str(Cond_num) ', window length = ' num2str(src_smart_optimal_window_length)...
+        ', sparsity level = ' num2str(All_opt_sparsity_level(src_smart_opt_wl_ind,use_feature))]);
+    
+    tiff_filename = [folder_path Subject_name '_ses' num2str(Sess_num) '_cond' num2str(Cond_num) '_block' num2str(Block_num) '_svm_src_comparison.tif'];
+    fig_filename = [folder_path Subject_name '_ses' num2str(Sess_num) '_cond' num2str(Cond_num) '_block' num2str(Block_num) '_svm_src_comparison.fig'];
+    print('-dtiff', '-r300', tiff_filename); 
+    saveas(gcf,fig_filename);
+    
+    
 end
 %% Support Vector Machines Classifier for EMG
 % % % % % load('MS_ses1_cond1_block80_emg_move_epochs.mat');
@@ -925,133 +979,221 @@ end
 % %     comb_specificity(cv_index) = comb_CM(2,2,cv_index)/(comb_CM(2,2,cv_index)+comb_CM(2,1,cv_index));
 % %     comb_accur(cv_index) = (comb_CM(1,1,cv_index)+comb_CM(2,2,cv_index))/(comb_CM(1,1,cv_index)+comb_CM(1,2,cv_index)+comb_CM(2,1,cv_index)+comb_CM(2,2,cv_index))*100;
 % % end
-%% New Save Results - 6/07/2014
-Performance = [];
-% Flags
-Performance.use_separate_move_rest_epochs = use_separate_move_rest_epochs;
-Performance.apply_epoch_standardization = apply_epoch_standardization;
-Performance.apply_baseline_correction = apply_baseline_correction;
-Performance.use_smart_features = use_smart_features;
-Performance.use_conventional_features = use_conventional_features;
-Performance.keep_bad_trials = keep_bad_trials;
-Performance.use_shifting_window_CV = use_shifting_window_CV;
-Performance.apply_scaling_for_SVM = apply_scaling_for_SVM;
+%% New Save Results - 2/12/2015
+if use_svm_classifier == 1
+    Performance = [];
+    % Flags
+    Performance.use_separate_move_rest_epochs = use_separate_move_rest_epochs;
+    Performance.apply_epoch_standardization = apply_epoch_standardization;
+    Performance.apply_baseline_correction = apply_baseline_correction;
+    Performance.use_smart_features = use_smart_features;
+    Performance.use_conventional_features = use_conventional_features;
+    Performance.keep_bad_trials = keep_bad_trials;
+    Performance.use_shifting_window_CV = use_shifting_window_CV;
+    Performance.apply_scaling_for_SVM = apply_scaling_for_SVM;
 
-% Variables
-Performance.classchannels = classchannels;
-Performance.find_peak_interval = find_peak_interval;
-Performance.reject_trial_before = reject_trial_before;
-Performance.prob_est_threshold = prob_est_threshold;
+    % Variables
+    Performance.classchannels = classchannels;
+    Performance.find_peak_interval = find_peak_interval;
+    Performance.reject_trial_before = reject_trial_before;
+    Performance.prob_est_threshold = prob_est_threshold;
 
-if use_conventional_features == 1
-        Performance.conv_window_length = conv_optimal_window_length;        % +1 added by Nikunj, 5/14/2014, removed by Nikunj, 6/07/2014
-        Performance.conv_opt_wl_ind = conv_opt_wl_ind;
-        Performance.Conventional_Features = All_Conventional_Features{conv_opt_wl_ind};       % Old Features
+    if use_conventional_features == 1
+            Performance.conv_window_length = conv_optimal_window_length;        % +1 added by Nikunj, 5/14/2014, removed by Nikunj, 6/07/2014
+            Performance.conv_opt_wl_ind = conv_opt_wl_ind;
+            Performance.Conventional_Features = All_Conventional_Features{conv_opt_wl_ind};       % Old Features
+    end
+
+    if use_smart_features == 1
+            Performance.opt_prob_threshold = roc_X_Y_Thr{smart_opt_wl_ind,2}(smart_p_opt_ind,3,2);
+            Performance.move_window = []; % Not valid for Smart Features
+            Performance.rest_window = All_rest_window(smart_opt_wl_ind,:);
+            Performance.bad_move_trials = All_bad_move_trials{smart_opt_wl_ind};
+            Performance.good_move_trials = All_good_move_trials{smart_opt_wl_ind};
+            Performance.smart_window_length = smart_optimal_window_length;
+            Performance.smart_opt_wl_ind = smart_opt_wl_ind;
+            %Performance.data_set_labels = data_set_labels;         % Confusing. Better avoid saving it
+            Performance.Smart_Features = All_Smart_Features{smart_opt_wl_ind};       % New Features
+            Performance.C_opt = All_C_opt(smart_opt_wl_ind,2);
+            Performance.gamma_opt = All_gamma_opt(smart_opt_wl_ind,2);
+            Performance.smart_Cov_Mat = All_smart_Cov_Mat{smart_opt_wl_ind};
+            Performance.smart_Mu_move = All_smart_Mu_move{smart_opt_wl_ind};
+            Performance.eeg_svm_model = All_eeg_svm_model{smart_opt_wl_ind}(2,:);   % Only for Smart Features
+            Performance.eeg_prob_estimates = All_eeg_prob_estimates{smart_opt_wl_ind}(2,:);
+            Performance.eeg_decision = All_eeg_decision{smart_opt_wl_ind}(2,:);
+            Performance.eeg_CM = squeeze(All_eeg_CM{smart_opt_wl_ind}(2,:,:,:));
+            Performance.eeg_sensitivity = All_eeg_sensitivity{smart_opt_wl_ind}(2,:);
+            Performance.eeg_specificity = All_eeg_specificity{smart_opt_wl_ind}(2,:);
+            Performance.eeg_accur = All_eeg_accur{smart_opt_wl_ind}(2,:);
+    end
+
+    % All variables used during optimization
+    Performance.consecutive_cnts_threshold = consecutive_cnts_threshold;
+    Performance.Max_Min_Thr = Max_Min_Thr;
+    Performance.CVO = CVO;
+    Performance.roc_measures = roc_measures;
+    Performance.roc_X_Y_Thr = roc_X_Y_Thr;
+    Performance.roc_OPT_AUC = roc_OPT_AUC;
+
+    Performance.All_window_length_range = All_window_length_range;
+    Performance.All_total_CM = All_total_CM;
+    Performance.All_move_window = All_move_window;
+    Performance.All_rest_window = All_rest_window;
+    Performance.All_good_move_trials = All_good_move_trials;
+    Performance.All_bad_move_trials = All_bad_move_trials;
+    Performance.All_Conventional_Features = All_Conventional_Features;
+    Performance.All_Smart_Features = All_Smart_Features;
+    Performance.All_conv_Cov_Mat =  All_conv_Cov_Mat;
+    Performance.All_conv_Mu_move = All_conv_Mu_move;
+    Performance.All_smart_Cov_Mat = All_smart_Cov_Mat;
+    Performance.All_smart_Mu_move = All_smart_Mu_move;
+
+    Performance.All_C_opt = All_C_opt;
+    Performance.All_gamma_opt = All_gamma_opt;
+    Performance.All_eeg_svm_model = All_eeg_svm_model;
+    Performance.All_eeg_prob_estimates = All_eeg_prob_estimates;
+    Performance.All_eeg_decision = All_eeg_decision;
+    Performance.All_eeg_CM = All_eeg_CM;
+    Performance.All_eeg_sensitivity = All_eeg_sensitivity;
+    Performance.All_eeg_specificity = All_eeg_specificity;
+    Performance.All_eeg_accur = All_eeg_accur;
+
+    % Miscellaneous
+    %Performance.test_trials_time = test_trials_time;
+    %Performance.test_trial_signal_time =  test_trial_signal_time;
+
+    file_identifier = [];
+    if use_conventional_features == 1
+        file_identifier = [ file_identifier '_conventional'];
+    end
+    if use_smart_features == 1
+        file_identifier = [ file_identifier '_smart'];
+    end
+    % if use_shifting_window_CV == 1
+    %     file_identifier = [ file_identifier '_online'];
+    % else
+    %     file_identifier = [ file_identifier '_offline'];
+    % end
+
+    filename2 = [folder_path Subject_name '_ses' num2str(Sess_num) '_cond' num2str(Cond_num) '_block' num2str(Block_num) '_performance_optimized' file_identifier '.mat']; %datestr(now,'dd_mm_yy_HHMM')
+    save(filename2,'Performance');   
 end
 
-if use_smart_features == 1
-        Performance.opt_prob_threshold = roc_X_Y_Thr{smart_opt_wl_ind,2}(smart_p_opt_ind,3,2);
-        Performance.move_window = []; % Not valid for Smart Features
-        Performance.rest_window = All_rest_window(smart_opt_wl_ind,:);
-        Performance.bad_move_trials = All_bad_move_trials{smart_opt_wl_ind};
-        Performance.good_move_trials = All_good_move_trials{smart_opt_wl_ind};
-        Performance.smart_window_length = smart_optimal_window_length;
-        Performance.smart_opt_wl_ind = smart_opt_wl_ind;
-        %Performance.data_set_labels = data_set_labels;         % Confusing. Better avoid saving it
-        Performance.Smart_Features = All_Smart_Features{smart_opt_wl_ind};       % New Features
-        Performance.C_opt = All_C_opt(smart_opt_wl_ind,2);
-        Performance.gamma_opt = All_gamma_opt(smart_opt_wl_ind,2);
-        Performance.smart_Cov_Mat = All_smart_Cov_Mat{smart_opt_wl_ind};
-        Performance.smart_Mu_move = All_smart_Mu_move{smart_opt_wl_ind};
-        Performance.eeg_svm_model = All_eeg_svm_model{smart_opt_wl_ind}(2,:);   % Only for Smart Features
-        Performance.eeg_prob_estimates = All_eeg_prob_estimates{smart_opt_wl_ind}(2,:);
-        Performance.eeg_decision = All_eeg_decision{smart_opt_wl_ind}(2,:);
-        Performance.eeg_CM = squeeze(All_eeg_CM{smart_opt_wl_ind}(2,:,:,:));
-        Performance.eeg_sensitivity = All_eeg_sensitivity{smart_opt_wl_ind}(2,:);
-        Performance.eeg_specificity = All_eeg_specificity{smart_opt_wl_ind}(2,:);
-        Performance.eeg_accur = All_eeg_accur{smart_opt_wl_ind}(2,:);
+if use_src_classifier == 1
+    SRC_Performance = [];
+    SRC_Performance.use_separate_move_rest_epochs = use_separate_move_rest_epochs;
+    SRC_Performance.apply_epoch_standardization = apply_epoch_standardization;
+    SRC_Performance.apply_baseline_correction = apply_baseline_correction;
+    SRC_Performance.use_smart_features = use_smart_features;
+    SRC_Performance.use_conventional_features = use_conventional_features;
+    SRC_Performance.keep_bad_trials = keep_bad_trials;
+    SRC_Performance.use_shifting_window_CV = use_shifting_window_CV;
+    
+    % Variables
+    SRC_Performance.classchannels = classchannels;
+    SRC_Performance.find_peak_interval = find_peak_interval;
+    SRC_Performance.reject_trial_before = reject_trial_before;
+    SRC_Performance.prob_est_threshold = prob_est_threshold;
+
+    if use_conventional_features == 1
+            SRC_Performance.conv_window_length = conv_optimal_window_length;        % +1 added by Nikunj, 5/14/2014, removed by Nikunj, 6/07/2014
+            SRC_Performance.conv_opt_wl_ind = conv_opt_wl_ind;
+            SRC_Performance.Conventional_Features = All_Conventional_Features{conv_opt_wl_ind};       % Old Features
+    end
+
+    if use_smart_features == 1
+            %SRC_Performance.opt_prob_threshold = roc_X_Y_Thr{smart_opt_wl_ind,2}(smart_p_opt_ind,3,2);
+            SRC_Performance.move_window = []; % Not valid for Smart Features
+            SRC_Performance.rest_window = All_rest_window(src_smart_opt_wl_ind,:);
+            SRC_Performance.bad_move_trials = All_bad_move_trials{src_smart_opt_wl_ind};
+            SRC_Performance.good_move_trials = All_good_move_trials{src_smart_opt_wl_ind};
+            SRC_Performance.src_smart_window_length = src_smart_optimal_window_length;
+            SRC_Performance.src_smart_opt_wl_ind = src_smart_opt_wl_ind;
+            %Performance.data_set_labels = data_set_labels;         % Confusing. Better avoid saving it
+            SRC_Performance.opt_sparsity_level = All_opt_sparsity_level(src_smart_opt_wl_ind,2);
+            SRC_Performance.Smart_Features = All_Smart_Features{src_smart_opt_wl_ind};       % New Features
+            SRC_Performance.smart_Cov_Mat = All_smart_Cov_Mat{src_smart_opt_wl_ind};
+            SRC_Performance.smart_Mu_move = All_smart_Mu_move{src_smart_opt_wl_ind};
+            SRC_Performance.eeg_prob_estimates = All_eeg_prob_estimates{src_smart_opt_wl_ind}(2,:);
+            SRC_Performance.eeg_decision = All_eeg_decision{src_smart_opt_wl_ind}(2,:);
+            SRC_Performance.eeg_CM = squeeze(All_eeg_CM{src_smart_opt_wl_ind}(2,:,:,:));
+            SRC_Performance.eeg_sensitivity = All_eeg_sensitivity{src_smart_opt_wl_ind}(2,:);
+            SRC_Performance.eeg_specificity = All_eeg_specificity{src_smart_opt_wl_ind}(2,:);
+            SRC_Performance.eeg_accur = All_eeg_accur{src_smart_opt_wl_ind}(2,:);
+    end
+    
+     % All variables used during optimization
+    SRC_Performance.consecutive_cnts_threshold = consecutive_cnts_threshold;
+    SRC_Performance.Max_Min_Thr = Max_Min_Thr;
+    SRC_Performance.CVO = CVO;
+%     Performance.roc_measures = roc_measures;
+%     Performance.roc_X_Y_Thr = roc_X_Y_Thr;
+%     Performance.roc_OPT_AUC = roc_OPT_AUC;
+
+    SRC_Performance.All_opt_sparsity_level = All_opt_sparsity_level;
+    SRC_Performance.All_opt_sparsity_value = All_opt_sparsity_value;    
+    SRC_Performance.All_window_length_range = All_window_length_range;
+    SRC_Performance.All_total_CM = All_total_CM;
+    SRC_Performance.All_move_window = All_move_window;
+    SRC_Performance.All_rest_window = All_rest_window;
+    SRC_Performance.All_good_move_trials = All_good_move_trials;
+    SRC_Performance.All_bad_move_trials = All_bad_move_trials;
+    SRC_Performance.All_Conventional_Features = All_Conventional_Features;
+    SRC_Performance.All_Smart_Features = All_Smart_Features;
+    SRC_Performance.All_conv_Cov_Mat =  All_conv_Cov_Mat;
+    SRC_Performance.All_conv_Mu_move = All_conv_Mu_move;
+    SRC_Performance.All_smart_Cov_Mat = All_smart_Cov_Mat;
+    SRC_Performance.All_smart_Mu_move = All_smart_Mu_move;
+
+    SRC_Performance.All_eeg_prob_estimates = All_eeg_prob_estimates;
+    SRC_Performance.All_eeg_decision = All_eeg_decision;
+    SRC_Performance.All_eeg_CM = All_eeg_CM;
+    SRC_Performance.All_eeg_sensitivity = All_eeg_sensitivity;
+    SRC_Performance.All_eeg_specificity = All_eeg_specificity;
+    SRC_Performance.All_eeg_accur = All_eeg_accur;
+    
+     file_identifier = [];
+    if use_conventional_features == 1
+        file_identifier = [ file_identifier '_conventional'];
+    end
+    if use_smart_features == 1
+        file_identifier = [ file_identifier '_smart'];
+    end
+    
+    filename3 = [folder_path Subject_name '_ses' num2str(Sess_num) '_cond' num2str(Cond_num) '_block' num2str(Block_num) '_src_performance_optimized' file_identifier '.mat']; %datestr(now,'dd_mm_yy_HHMM')
+    save(filename3,'SRC_Performance');   
 end
-
-% All variables used during optimization
-Performance.consecutive_cnts_threshold = consecutive_cnts_threshold;
-Performance.Max_Min_Thr = Max_Min_Thr;
-Performance.CVO = CVO;
-Performance.roc_measures = roc_measures;
-Performance.roc_X_Y_Thr = roc_X_Y_Thr;
-Performance.roc_OPT_AUC = roc_OPT_AUC;
-
-Performance.All_window_length_range = All_window_length_range;
-Performance.All_total_CM = All_total_CM;
-Performance.All_move_window = All_move_window;
-Performance.All_rest_window = All_rest_window;
-Performance.All_good_move_trials = All_good_move_trials;
-Performance.All_bad_move_trials = All_bad_move_trials;
-Performance.All_Conventional_Features = All_Conventional_Features;
-Performance.All_Smart_Features = All_Smart_Features;
-Performance.All_conv_Cov_Mat =  All_conv_Cov_Mat;
-Performance.All_conv_Mu_move = All_conv_Mu_move;
-Performance.All_smart_Cov_Mat = All_smart_Cov_Mat;
-Performance.All_smart_Mu_move = All_smart_Mu_move;
-
-Performance.All_C_opt = All_C_opt;
-Performance.All_gamma_opt = All_gamma_opt;
-Performance.All_eeg_svm_model = All_eeg_svm_model;
-Performance.All_eeg_prob_estimates = All_eeg_prob_estimates;
-Performance.All_eeg_decision = All_eeg_decision;
-Performance.All_eeg_CM = All_eeg_CM;
-Performance.All_eeg_sensitivity = All_eeg_sensitivity;
-Performance.All_eeg_specificity = All_eeg_specificity;
-Performance.All_eeg_accur = All_eeg_accur;
-
-% Miscellaneous
-%Performance.test_trials_time = test_trials_time;
-%Performance.test_trial_signal_time =  test_trial_signal_time;
-
-file_identifier = [];
-if use_conventional_features == 1
-    file_identifier = [ file_identifier '_conventional'];
-end
-if use_smart_features == 1
-    file_identifier = [ file_identifier '_smart'];
-end
-% if use_shifting_window_CV == 1
-%     file_identifier = [ file_identifier '_online'];
-% else
-%     file_identifier = [ file_identifier '_offline'];
-% end
-
-filename2 = [folder_path Subject_name '_ses' num2str(Sess_num) '_cond' num2str(Cond_num) '_block' num2str(Block_num) '_performance_optimized' file_identifier '.mat']; %datestr(now,'dd_mm_yy_HHMM')
-save(filename2,'Performance');   
 %% Plot sensitivity & specificity
-figure; 
-group_names = {'Online Fixed','Fixed_old', 'Online Flexible'};
-online_fixed = Performance.All_eeg_accur{Performance.conv_opt_wl_ind}(1,:);
-%online_variable = Performance.All_eeg_accur{Performance.smart_opt_wl_ind}(2,:);
-online_variable_old = prev_Performance.All_eeg_accur{prev_Performance.conv_opt_wl_ind}(1,:);
-online_variable = prev_Performance.All_eeg_accur{prev_Performance.smart_opt_wl_ind}(2,:);
+    if use_svm_classifier == 1
+    figure; 
+    group_names = {'Online Fixed','Fixed_old', 'Online Flexible'};
+    online_fixed = Performance.All_eeg_accur{Performance.conv_opt_wl_ind}(1,:);
+    %online_variable = Performance.All_eeg_accur{Performance.smart_opt_wl_ind}(2,:);
+    online_variable_old = prev_Performance.All_eeg_accur{prev_Performance.conv_opt_wl_ind}(1,:);
+    online_variable = prev_Performance.All_eeg_accur{prev_Performance.smart_opt_wl_ind}(2,:);
 
-% filename3 = [folder_path Subject_name '_ses' num2str(Sess_num) '_cond' num2str(Cond_num) '_block80_performance_optimized_fixed_smart_offline_nic.mat'];
-% load(filename3);
-% offline_fixed = Performance.All_eeg_accur{Performance.conv_opt_wl_ind}(1,:);
+    % filename3 = [folder_path Subject_name '_ses' num2str(Sess_num) '_cond' num2str(Cond_num) '_block80_performance_optimized_fixed_smart_offline_nic.mat'];
+    % load(filename3);
+    % offline_fixed = Performance.All_eeg_accur{Performance.conv_opt_wl_ind}(1,:);
 
 
-h = boxplot([online_fixed' online_variable_old' online_variable'] ,'labels',group_names,'widths',0.5);
- set(h,'LineWidth',2);
-v = axis;
-axis([v(1) v(2) 0 100]);
-ylabel('Classification Accuracy (%)','FontSize',12);
-title([Subject_name ', Mode ' num2str(Cond_num)],'FontSize',12);
+    h = boxplot([online_fixed' online_variable_old' online_variable'] ,'labels',group_names,'widths',0.5);
+     set(h,'LineWidth',2);
+    v = axis;
+    axis([v(1) v(2) 0 100]);
+    ylabel('Classification Accuracy (%)','FontSize',12);
+    title([Subject_name ', Mode ' num2str(Cond_num)],'FontSize',12);
 
-%export_fig 'TA_ses1_cond3_smart_conv_comparison' '-png' '-transparent'
+    %export_fig 'TA_ses1_cond3_smart_conv_comparison' '-png' '-transparent'
 
-% if use_shifting_window_CV == 1
-%     title('Online Simulation','FontSize',12);
-%     %mtit('Online Simulation','fontsize',12,'color',[0 0 1],'xoff',0,'yoff',-1.15);
-% else
-%     title('Offline Validation','FontSize',12);
-%     %mtit('Offline Validation','fontsize',12,'color',[0 0 1],'xoff',0,'yoff',-1.15);
-% end
-
+    % if use_shifting_window_CV == 1
+    %     title('Online Simulation','FontSize',12);
+    %     %mtit('Online Simulation','fontsize',12,'color',[0 0 1],'xoff',0,'yoff',-1.15);
+    % else
+    %     title('Offline Validation','FontSize',12);
+    %     %mtit('Offline Validation','fontsize',12,'color',[0 0 1],'xoff',0,'yoff',-1.15);
+    % end
+    end
 elseif regular_or_chance_level_classifier == 0
 % Estimate chance level performance by permutation of labels and data
     for use_feature = loop_start:loop_end
@@ -1455,7 +1597,6 @@ elseif regular_or_chance_level_classifier == 0
 
     
 end
-
 %% Old Save Results
 % Performance = [];
 % % Flags
