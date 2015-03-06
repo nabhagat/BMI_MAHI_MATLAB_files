@@ -179,7 +179,6 @@ train_SVM_classifier = 1;
 
 %6. Segment data for predicting kinematics
 segment_data_for_decoding_kinematics = 0;
-
 %% Preprocessing of raw EEG signals
 % % Inputs - SB_raw.set
 % % Outputs - SB_preprocessed.set; SB_standardized.set
@@ -1220,7 +1219,6 @@ if include_target_events == 1
     end
 end
 end
-
 %% Extract move epochs and rest epochs
 if extract_epochs == 1
     
@@ -1502,9 +1500,10 @@ end
 %separabiltiy_index;
 %% Plot ERPs
 if plot_ERPs == 1
-    figure('Position',[50 300 6*116 3.5*116]); 
+    paper_font_size = 10;
+    figure('Position',[1050 1300 3.5*116 2.5*116]); 
     %figure('units','normalized','outerposition',[0 0 1 1])
-    T_plot = tight_subplot(3,5,[0.08 0.05],[0.15 0.01],[0.1 0.01]);
+    T_plot = tight_subplot(3,5,[0.01 0.01],[0.15 0.01],[0.1 0.1]);
     hold on;
     plot_ind4 = 1;
     
@@ -1531,7 +1530,7 @@ if plot_ERPs == 1
         %plot(erp_time,move_avg_channels(Channels_nos(RPind),:),rest_time, rest_avg_channels(Channels_nos(RPind),:),'r','LineWidth',2);
         %plot(erp_time,preprocessed_move_epochs(Channels_nos(RPind),:),'b',erp_time,standardize_move_epochs(Channels_nos(RPind),:),'k',erp_time,rest_avg_channels(Channels_nos(RPind),:),'r','LineWidth',2);
         %plot(erp_time,move_avg_channels(Channels_nos(RPind),:),'r','LineWidth',2);
-        text(-2,-5,[EEG.chanlocs(Channels_nos(ind4)).labels],'Color','k','FontWeight','normal'); % ', ' num2str(Channels_nos(ind4))
+        text(-2,-5,[EEG.chanlocs(Channels_nos(ind4)).labels],'Color','k','FontWeight','normal','FontSize',paper_font_size-1); % ', ' num2str(Channels_nos(ind4))
         set(gca,'YDir','reverse');
         %if max(abs(move_avg_channels(Channels_nos(RPind),:))) <= 6
 %          if max((move_avg_channels(Channels_nos(ind4),:)+(move_SE_channels(Channels_nos(ind4),:)))) >= 6 || ...
@@ -1542,42 +1541,56 @@ if plot_ERPs == 1
 %             set(gca,'YTick',[-10 0 10]);
 %             set(gca,'YTickLabel',{'-10'; '0'; '10'});
 %         else
-            axis([-2.5 1.5 -6 3]);
+            axis([-2.5 1 -6 3]);
             %axis([move_erp_time(1) 1 -15 15]);
             set(gca,'YTick',[-5 0 2]);
-            set(gca,'YTickLabel',{'-5'; '0'; '+2'},'FontWeight','normal');
+            set(gca,'YTickLabel',{'-5'; '0'; '+2'},'FontWeight','normal','FontSize',paper_font_size-1);
 %        end
         line([0 0],[-10 10],'Color','k','LineWidth',0.5,'LineStyle','--');  
         line([-2.5 1.5],[0 0],'Color','k','LineWidth',0.5,'LineStyle','--');  
         plot_ind4 = plot_ind4 + 1;
+        
+        if ind4 == 6
+            set(gca,'XColor',[1 1 1],'YColor',[1 1 1])
+            set(gca,'YtickLabel',' ');
+             hylab = ylabel('MRCP Grand Average','FontSize',paper_font_size-1,'Color',[0 0 0]);
+             pos_hylab = get(hylab,'Position');
+             set(hylab,'Position',[pos_hylab(1) pos_hylab(2) pos_hylab(3)]);
+        else
+            set(gca,'Visible','off');
+        end
+        
     %    grid on;
     %     xlabel('Time (sec.)')
     %     ylabel('Voltage (\muV)');
      %   set(gca,'XTick',[-2 -1 0 1]);
      %   set(gca,'XTickLabel',{'-2';'-1'; '0';'1'});  
-        set(gca,'Visible','off');
+        
           
     end
 
     % subplot(4,3,5);
     % topoplot([],EEG.chanlocs,'style','blank','electrodes','labels','chaninfo',EEG.chaninfo);
     %subplot(5,5,8);
+   
+    
     axes(T_plot(11));
     set(gca,'Visible','on');
     bgcolor = get(gcf,'Color');
     set(gca,'YColor',[1 1 1]);
-    set(gca,'XTick',[-2 -1 0 1]);
-    set(gca,'XTickLabel',{'-2';'-1'; 'MO';'1'});  
+    set(gca,'XTick',[-2 0 1]);
+    set(gca,'XTickLabel',{'-2'; 'MO';'1'},'FontSize',paper_font_size-1);  
     set(gca,'TickLength',[0.03 0.025])
     hold on;
-    xlabel('Time (sec.)', 'FontSize', 10);
+    xlabel('Time (s)', 'FontSize',paper_font_size-1);
     
     % Annotate line
+    axes(T_plot(15));
     axes_pos = get(gca,'Position'); %[lower bottom width height]
     axes_ylim = get(gca,'Ylim');
     annotate_length = (5*axes_pos(4))/(axes_ylim(2) - axes_ylim(1));
-    annotation(gcf,'line', [(axes_pos(1) - 0.025) (axes_pos(1) - 0.025)],...
-        [(axes_pos(2)+axes_pos(4) - annotate_length/5) (axes_pos(2)+axes_pos(4) - annotate_length - annotate_length/5)],'LineWidth',0.5);
+    annotation(gcf,'line', [(axes_pos(1)+axes_pos(3)+0.025) (axes_pos(1)+axes_pos(3)+0.025)],...
+        [(axes_pos(2)+axes_pos(4) - annotate_length/5) (axes_pos(2)+axes_pos(4) - annotate_length - annotate_length/5)],'LineWidth',2);
     
     %hylabel = ylabel('EEG (\muV)','FontSize', 10, 'rotation',90);
     %pos = get(hylabel,'Position');
@@ -1589,18 +1602,18 @@ if plot_ERPs == 1
     %export_fig MS_ses1_cond1_block80_Average '-png' '-transparent';
     
     % Expand axes to fill figure
-    fig = gcf;
-    style = hgexport('factorystyle');
-    style.Bounds = 'tight';
-    hgexport(fig,'-clipboard',style,'applystyle', true);
-    drawnow;
+%     fig = gcf;
+%     style = hgexport('factorystyle');
+%     style.Bounds = 'tight';
+%     hgexport(fig,'-clipboard',style,'applystyle', true);
+%     drawnow;
     
     response = input('Save figure to folder [y/n]: ','s');
     if strcmp(response,'y')
-         tiff_filename = ['C:\NRI_BMI_Mahi_Project_files\Figures_for_paper\' Subject_name '_ses' num2str(Sess_num) '_cond' num2str(Cond_num) '_block' num2str(Block_num) '_MRCP_grand_average.tif'];
-         fig_filename = ['C:\NRI_BMI_Mahi_Project_files\Figures_for_paper\' Subject_name '_ses' num2str(Sess_num) '_cond' num2str(Cond_num) '_block' num2str(Block_num) '_MRCP_grand_average.fig'];
-        print('-dtiff', '-r300', tiff_filename); 
-        saveas(gcf,fig_filename);
+         %tiff_filename = ['C:\NRI_BMI_Mahi_Project_files\Figures_for_paper\' Subject_name '_ses' num2str(Sess_num) '_cond' num2str(Cond_num) '_block' num2str(Block_num) '_MRCP_grand_average.tif'];
+         %fig_filename = ['C:\NRI_BMI_Mahi_Project_files\Figures_for_paper\' Subject_name '_ses' num2str(Sess_num) '_cond' num2str(Cond_num) '_block' num2str(Block_num) '_MRCP_grand_average.fig'];
+        %print('-dtiff', '-r300', tiff_filename); 
+        %saveas(gcf,fig_filename);
     else
         disp('Save figure aborted');
     end
@@ -1852,7 +1865,6 @@ avg_FPR         = [avg_FPR; mean(FPR)];
 
 end
 %% SVM Classifier training & validation
-
 %% Close-loop BCI testing in realtime.
 if test_classifier == 1
    

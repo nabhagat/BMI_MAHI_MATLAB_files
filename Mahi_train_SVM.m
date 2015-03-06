@@ -13,6 +13,7 @@
 % 1/3/15 - Added switch statement to select loop_start:loop_end in FOR
 %                  loops
 %               - Added option to load previously computed Performance variable
+% 2/15/15 - Added option to switch between training of SVM and Sparse Representation Classifier (SRC) 
 clear;
 %close all;
 %% Global Variables

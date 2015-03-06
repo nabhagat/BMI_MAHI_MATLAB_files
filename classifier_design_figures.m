@@ -7,7 +7,7 @@ plot_electrode_locations = 0;
 plot_scalp_map = 0;
 plot_eeg_emg_latencies = 0;
 plot_feature_space = 0;
-plot_offline_performance = 1;
+plot_offline_performance = 0;
 plot_offline_performance_new = 0;
 plot_single_spatial_average_trials = 0;
 plot_classifier_design_all = 0;
@@ -91,7 +91,7 @@ if plot_erp_image == 1
 %     EEG.data = modified_EEG_data;
 %     [ALLEEG EEG CURRENTSET] = eeg_store(ALLEEG, EEG); % copy it to ALLEEG
 %     eeglab redraw;
-
+    
 % Sort Channels
 unsorted_labels = [];
 for j = 1:length(classchannels)
@@ -103,8 +103,8 @@ classchannels = classchannels(sorted_order);
 
 
 % ERP image plot for classchannels and spatial average
-figure('Position',[50 300 8*116 3*116]); 
-T_plot = tight_subplot(1,length(classchannels)+1,[0.08 0.03],[0.15 0.1],[0.1 0.1]);
+figure('Position',[1050 1300 3.5*116 2.5*116]); 
+T_plot = tight_subplot(1,length(classchannels)+1,[0.01 0.01],[0.15 0.15],[0.1 0.1]);
 average_width = 2;  % Vertical moveing average filter; takes 2 trials above and below the trial of interest
 avergae_type = 'boxcar'; % Avoid gaussian because avewidth of 1, applies a vertical window of 7 trials
 decimate = [];
@@ -116,26 +116,29 @@ for ch = 1:length(classchannels)
     [outdata,outvar,outtrials,limits,axhndls, ...
                         erp,amps,cohers,cohsig,ampsig,outamps,...
                         phsangls,phsamp,sortidx,erpsig] = erpimage(erpdata',[],move_erp_time,EEG.chanlocs(classchannels(ch)).labels,average_width,decimate,...
-                                                                                                            'limits',[-2.5 1.5],'caxis',caxis_range,...%'vert',[-2 0.5],'horz',[132],...
+                                                                                                            'limits',[-2.5 1],'caxis',caxis_range,...%'vert',[-2 0.5],'horz',[132],...
                                                                                                             'cbar','off','cbar_title','\muV',...
                                                                                                             'noxlabel','on','avg_type',avergae_type,...
-                                                                                                            'img_trialax_label',[],'img_trialax_ticks',[20 40 60 80 100 120 140 160]);
+                                                                                                            'img_trialax_label',[],'img_trialax_ticks',[50 100 150]);
                                                                                                         
     img_handle = axhndls(1);
     img_xlab_handle = get(img_handle,'xlabel');
     img_ylab_handle = get(img_handle,'ylabel');
     img_title_handle = get(img_handle,'title');
-    set(img_title_handle,'FontSize',10,'FontWeight','normal');
-    set(img_handle,'YLim',[1 size(move_epochs_s,1)])
+    set(img_title_handle,'FontSize',paper_font_size-1,'FontWeight','normal');
+    set(img_handle,'YLim',[1 size(move_epochs_s,1)],'Box','on')
     set(img_handle,'YTickLabel','');
     set(img_handle,'TickLength',[0.03 0.025]);
-    set(img_handle,'Xtick',[-2 -1 0 1]);
-    set(img_handle,'XTickLabel',{'-2' '-1' 'MO' '1'});
+    set(img_handle,'Xtick',[-2 0 1]);
+    set(img_handle,'XTickLabel',{' '},'FontSize',paper_font_size-1);
     
     if ch == 1
-        set(img_xlab_handle,'String','Time(sec.)','FontSize',10);
-        set(img_ylab_handle,'String','Sorted Single Trials','FontSize',10);   
-        set(img_handle,'YTickLabel',{'20' '40' '60' '80' '100' '120' '140' '160'});
+        set(img_xlab_handle,'String','Time (s)','FontSize',paper_font_size-1);
+        set(img_ylab_handle,'String','Sorted Single Trials','FontSize',paper_font_size-1);  
+        pos_ylab = get(img_ylab_handle,'Position');
+        set(img_ylab_handle,'Position',[pos_ylab(1) - 0.8 pos_ylab(2) pos_ylab(3)]);
+        set(img_handle,'Ytick',[50 100 150],'YTickLabel',{'50' '100' '150'},'FontSize',paper_font_size-1);
+        set(img_handle,'XTickLabel',{'-2' 'MO' '1'},'FontSize',paper_font_size-1);
     end
     img_handle_children = get(img_handle,'Children'); % [Movement_onset_line horizontanl_line vertical_line colormap]
     set(img_handle_children(1),'LineWidth',0.5,'LineStyle','--');
@@ -144,36 +147,40 @@ end
      axes(T_plot(length(classchannels) + 1));
     [outdata,outvar,outtrials,limits,axhndls, ...
                     erp,amps,cohers,cohsig,ampsig,outamps,...
-                    phsangls,phsamp,sortidx,erpsig] = erpimage(sorted_move_ch_avg_ini',[],move_erp_time,'Spatial Average',average_width,decimate,...
-                                                                                                        'limits',[-2.5 1.5],'caxis',caxis_range,'vert',[-1.5],'horz',length(good_move_trials)+1,...
+                    phsangls,phsamp,sortidx,erpsig] = erpimage(sorted_move_ch_avg_ini',[],move_erp_time,{'Spatial'; 'Average'},average_width,decimate,...
+                                                                                                        'limits',[-2.5 1],'caxis',caxis_range,'vert',[-1.5],'horz',length(good_move_trials)+1,...
                                                                                                         'cbar','on','cbar_title','\muV',...
                                                                                                         'noxlabel','on','avg_type',avergae_type,...
-                                                                                                        'img_trialax_label',[],'img_trialax_ticks',[20 40 60 80 100 120 140 160]);
+                                                                                                        'img_trialax_label',[],'img_trialax_ticks',[50 100 150]);
 
     img_handle = axhndls(1);
     img_title_handle = get(img_handle,'title');
-    set(img_title_handle,'FontSize',10,'FontWeight','normal');
-    set(img_handle,'TickLength',[0.03 0.025]);
+    set(img_title_handle,'FontSize',paper_font_size-1,'FontWeight','normal');
+    set(img_handle,'TickLength',[0.03 0.025],'Box','on');
      set(img_handle,'YTickLabel','');
-     set(img_handle,'Xtick',[-2 -1 0 1]);
-    set(img_handle,'XTickLabel',{'-2' '-1' 'MO' '1'});
+     set(img_handle,'Xtick',[-1.5]);
+    set(img_handle,'XTickLabel',{'-1.5s'},'FontSize',paper_font_size-1);
     img_handle_children = get(img_handle,'Children'); % [Movement_onset_line horizontanl_line vertical_line colormap]
     set(img_handle_children(1),'LineWidth',0.5,'LineStyle','--');
     set(img_handle_children(2),'LineWidth',1,'Color',[0 0 0]);
     set(img_handle_children(3),'LineWidth',1,'Color',[0 0 0],'LineStyle','-');
     
+    
     cbar_handle = axhndls(2);
     cbar_child_handle = get(cbar_handle,'child');
+    cbar_title_handle = get(cbar_handle,'title');
+    set(cbar_title_handle,'FontSize',paper_font_size-2);
     bar_pos = get(cbar_handle,'Position');
-    set(cbar_handle,'Position',[bar_pos(1) bar_pos(2) bar_pos(3)/2 bar_pos(4)/3]);
+    set(cbar_handle,'Position',[bar_pos(1)+0.01 bar_pos(2) bar_pos(3)/3 bar_pos(4)/3]);
     ytickpos = get(cbar_handle,'Ytick');
     set(cbar_handle,'Ytick',[ytickpos(1) ytickpos(3) ytickpos(end)]);
-    set(cbar_handle,'YtickLabel',[-10 0 10]);
+    set(cbar_handle,'YtickLabel',[-10 0 10],'FontSize',paper_font_size-2);
     set(cbar_handle,'YDir','reverse');
-%     if ch ~= length(classchannels)
-%          set(cbar_handle,'Visible','off');
-%          set(cbar_child_handle,'Visible','off');         
-%     end
+
+% % Added 3-3-15
+% cbar_axes = colorbar('location','SouthOutside','XTick',[-6 0 6],'XTickLabel',{'-6','0','6'});
+% set(cbar_axes,'Position',[0.75 0.28 0.2 0.05]);
+% xlabel(cbar_axes,'Average MRCP signal strength (\muV)','FontSize',18);
 
 % Expand axes to fill figure
 fig = gcf;
@@ -186,8 +193,8 @@ response = input('Save figure to folder [y/n]: ','s');
 if strcmp(response,'y')
      tiff_filename = ['C:\NRI_BMI_Mahi_Project_files\Figures_for_paper\' Subject_name '_ses' num2str(Sess_num) '_cond' num2str(Cond_num) '_block' num2str(Block_num) '_erpimage.tif'];
      fig_filename = ['C:\NRI_BMI_Mahi_Project_files\Figures_for_paper\' Subject_name '_ses' num2str(Sess_num) '_cond' num2str(Cond_num) '_block' num2str(Block_num) '_erpimage.fig'];
-    print('-dtiff', '-r300', tiff_filename); 
-    saveas(gcf,fig_filename);
+    %print('-dtiff', '-r300', tiff_filename); 
+    %saveas(gcf,fig_filename);
 else
     disp('Save figure aborted');
 end
@@ -861,14 +868,14 @@ if plot_classifier_design_all == 1
         hold on;
     end
     
-   set(gca,'Xtick',[-2 -1 0 1],'XtickLabel',{'-2' '-1' 'MO' '1'},'xgrid','on','box','on','FontSize',paper_font_size);
+   set(gca,'Xtick',[-2 -1 0 1],'XtickLabel',{'-2' '-1' 'MO' '1'},'xgrid','on','box','on','FontSize',paper_font_size-1);
    axis([-2.5 1 min(raster_zscore(:,1)) max(raster_zscore(:,end))]);
    set(gca,'Ydir','reverse');   
-    hxlab = xlabel('Time (sec.)','FontSize',paper_font_size); 
+    hxlab = xlabel('Time (sec.)','FontSize',paper_font_size-1); 
     %pos_hxlab = get(hxlab,'Position');
     %set(hxlab,'Position',[pos_hxlab(1) (pos_hxlab(2) + 0.6) pos_hxlab(3)]);
     %set(gca,'Ytick',[-10 -5 0 5 10],'YtickLabel',{'-10' '-5' '0' '5' '10'},'ygrid','on','box','on');
-    hylab_shd = ylabel({'Standardized Amplitude'},'FontSize',paper_font_size);
+    hylab_shd = ylabel({'Standardized Amplitude'},'FontSize',paper_font_size-1);
     pos_hylab_shd = get(hylab_shd,'Position');
     set(hylab_shd,'Position',[pos_hylab_shd(1) pos_hylab_shd(2)+1 pos_hylab_shd(3)]);       
     title({'Single-trial Epochs'});
@@ -914,11 +921,11 @@ if plot_classifier_design_all == 1
     %line([0 0],ylimits,'Color','k','LineWidth',0.5,'LineStyle','--');
     h_criteria = line([-1.5 -1.5],ylimits,'Color','k','LineWidth',0.5,'LineStyle','-');
     
-    set(gca,'Xtick',[-2 -1.5 -1 0 1],'XtickLabel',{'-2' '-1.5' '-1' 'MO' '1'},'xgrid','on','box','on','FontSize',paper_font_size);
+    set(gca,'Xtick',[-2 -1.5 -1 0 1],'XtickLabel',{'-2' '-1.5' '-1' 'MO' '1'},'xgrid','on','box','on','FontSize',paper_font_size-1);
     axis([-2.5 1 min(raster_zscore(:,1))-0.5 max(raster_zscore(:,end))]);
    set(gca,'Ydir','reverse');
        
-    hxlab = xlabel('Time (sec.)','FontSize',paper_font_size); 
+    hxlab = xlabel('Time (sec.)','FontSize',paper_font_size-1); 
     title({'Single-trial epochs'});    
     
     
@@ -959,8 +966,8 @@ if plot_classifier_design_all == 1
     
     hparent = get(hscatter_sm2(1),'parent');
     set(hparent,'XTick',[-20 -10 0 10],'XtickLabel',{'-20' '-10' '0' '10'},'Ytick',[0 5 10],'YtickLabel',{'0' '5' '10'});  
-    title('Fixed window','FontSize',paper_font_size);
-    set(gca,'FontSize',paper_font_size);
+    title('Fixed window','FontSize',paper_font_size-1);
+    set(gca,'FontSize',paper_font_size-1);
 %     set(hscatter_sm2(1),'DisplayName','Go (wl_o)');
 %     set(hscatter_sm2(2),'DisplayName','No-go (wl_o)');
     
@@ -983,9 +990,9 @@ if plot_classifier_design_all == 1
     set(hscatter_sm1(1),'MarkerSize',6);set(hscatter_sm1(2),'MarkerSize',4);
     hparent = get(hscatter_sm1(1),'parent');
     set(hparent,'XTick',[-20 -10 0 10],'XtickLabel',{'-20' '-10' '0' '10'},'Ytick',[0 5 10],'YtickLabel',{' '});  
-    title('Adaptive window','FontSize',paper_font_size);
+    title('Adaptive window','FontSize',paper_font_size-1);
     ylabel(gca,' ');
-    set(gca,'FontSize',paper_font_size);
+    set(gca,'FontSize',paper_font_size-1);
     
     %Plot remaining features
     features_to_plot = [2 3]; % [X Y]
@@ -1002,7 +1009,7 @@ if plot_classifier_design_all == 1
     set(hscatter_sm3(1),'MarkerSize',6);set(hscatter_sm3(2),'MarkerSize',4);
     hparent = get(hscatter_sm3(1),'parent');
     set(hparent,'XTick',[-10 -5  0 5],'XtickLabel',{'-10' '-5' '0' '5'},'Ytick',[-10 0 5],'YtickLabel',{'-10' '0' '5'});
-    set(gca,'FontSize',paper_font_size);
+    set(gca,'FontSize',paper_font_size-1);
        
     axes(N_plot(8));    
     hscatter_sm4 = gscatter(scatter_set_sm(:,features_to_plot(1)),scatter_set_sm(:,features_to_plot(2)),groups_smart,[[0 0 0];[0.7 0.7 0.7]],'xo',...
@@ -1017,7 +1024,7 @@ if plot_classifier_design_all == 1
     hparent = get(hscatter_sm4(1),'parent');
     set(hparent,'XTick',[-10 -5  0 5],'XtickLabel',{ '-10' '-5' '0' '5'},'Ytick',[-10 0 5],'YtickLabel',{' '});
     ylabel(gca,' ');
-    set(gca,'FontSize',paper_font_size);
+    set(gca,'FontSize',paper_font_size-1);
     
    legendflex([hscatter_sm4(1), hscatter_sm4(2)],{'Go','No-go'},'ncol',2, 'ref',N_plot(4),'anchor',[1 6],'buffer',[0 25],'box','off','xscale',0.3,'padding',[12 10 20]);
     %set(object_h(3),'FaceAlpha',0.5);
@@ -1055,10 +1062,10 @@ if plot_classifier_design_all == 1
                                           Performance.roc_X_Y_Thr{Performance.smart_opt_wl_ind,2}(:,2,2),'-r','LineWidth',1.5);
     %line([0 1],[0 1],'LineStyle','--', 'LineWidth',1.5,'Color','k');
     %text(0.25,0.07,sprintf('AUC (wl_o) = %.2f', Performance.roc_OPT_AUC(Performance.smart_opt_wl_ind,3,2)));
-    title('ROC curves','FontSize',10);
+    title('ROC curves','FontSize',paper_font_size-1);
     
-    xlabel(N_plot(9),'FPR','FontSize',10);
-    hylab_roc = ylabel(N_plot(9),'TPR','FontSize',10); 
+    xlabel(N_plot(9),'FPR','FontSize',paper_font_size-1);
+    hylab_roc = ylabel(N_plot(9),'TPR','FontSize',paper_font_size-1); 
     pos_hylab_roc_orig = get(hylab_roc,'position');
     set(N_plot(9),'XTick',[0 0.5 1],'ytick',[0 0.5 1],'XtickLabel',{'0' ' ' '1'},'YtickLabel',{'0' ' ' '1'},'XGrid','on','YGrid','on');
     set(hylab_roc,'Position',[pos_hylab_roc_orig(1) pos_hylab_roc_orig(2) pos_hylab_roc_orig(3)]);
@@ -1077,8 +1084,8 @@ if plot_classifier_design_all == 1
     xlim([all_window_sizes(1)./Fs_eeg all_window_sizes(end)./Fs_eeg]);
     ylim([0.4 1]);
     set(N_plot(10),'XTick',[0.5 0.75 1],'ytick',[0.5 0.6 0.8 1],'XtickLabel',{'0.5' '0.75' '1'},'YtickLabel',{'0.5' '0.6' '0.8' '1'},'XGrid','on','YGrid','on');
-    xlabel(N_plot(10),'Window lengths (sec.)','FontSize',10);
-    title(N_plot(10),'Area under ROC','FontSize',10);
+    xlabel(N_plot(10),'Window lengths (sec.)','FontSize',paper_font_size-1);
+    title(N_plot(10),'Area under ROC','FontSize',paper_font_size-1);
     %set(N_plot(10),'Box','on');
    
     %% 4. Offline Performance
@@ -1156,9 +1163,9 @@ if plot_classifier_design_all == 1
                         Xtick_pos = [Xtick_pos (group_positions(i) + group_positions(i+1))/2];
                     end
                     set(h_axes,'Xtick',Xtick_pos);
-                    ylabel('Accuracy (%)','FontSize',10);
+                    ylabel('Accuracy (%)','FontSize',paper_font_size-1);
                     xlabel({'Subjects (Calibration modes)'});
-                    title('Offline Calibration Performance','FontSize',10);
+                    title('Offline Calibration Performance','FontSize',paper_font_size-1);
                     sigstar(sig_intervals,p_values);
                     set(gca,'Position',ax11pos_orig)
                     set(gca,'Box','off')
@@ -1166,7 +1173,7 @@ if plot_classifier_design_all == 1
     
     [legend_h,object_h,plot_h,text_str] = ...
                         legendflex([h_conv_roc, h_smart_roc],{'Fixed window','Adaptive window'},'nrow',2, 'ref',N_plot(11),...
-                                            'anchor',[5 5],'buffer',[0 -5],'box','off','xscale',0.5,'padding',[0 10 0],'fontsize',8);
+                                            'anchor',[5 5],'buffer',[0 -5],'box','off','xscale',0.5,'padding',[0 10 0],'fontsize',paper_font_size-1);
 end
 %% Plot accuracy for all subjects- NEW format
 if plot_offline_performance_new == 1
