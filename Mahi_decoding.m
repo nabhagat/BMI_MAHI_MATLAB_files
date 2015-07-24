@@ -43,18 +43,21 @@
 clear;
 %close all;
 %% Global variables 
+
+addpath(genpath('C:/NRI_BMI_Mahi_Project_files/Mahi_Rice_software'));
+
 myColors = ['r','b','k','m','y','c','m','g','r','b','k','b','r','m','g','r','b','k','y','c','m',...
     'g','r','b','k','y','c','m','g','r','b','k','b','r','m','g','r','b','k','y','c','m'];
 
 % EEG Channels used for identifying MRCP
 Channels_nos = [43, 9, 32, 10, 44, 13, 48, 14, 49, 15, 52, 19, ... 
-                53, 20, 54]; % removed P-channels = [24, 57, 25, 58, 26]; removed F-channels = [4, 38, 5, 39, 6];    % 32 or 65 for FCz
+                53, 20, 54, 24, 57, 25, 58, 26, 4, 38, 5, 39, 6];    % 32 or 65 for FCz
 
 % Subject Details 
 Subject_name = 'BNBO'; % change1
 Sess_num = '2';               
-closeloop_Sess_num = '6';     
-Cond_num = 3;  % 1 - Active; 2 - Passive; 3 - Triggered; 4 - Observation 
+closeloop_Sess_num = '7';     
+Cond_num = 1;  % 1 - Active; 2 - Passive; 3 - Triggered; 4 - Observation 
 Block_num = 160;
 
 folder_path = ['C:\NRI_BMI_Mahi_Project_files\All_Subjects\Subject_' Subject_name '\' Subject_name '_Session' num2str(Sess_num) '\']; % change2
@@ -62,9 +65,9 @@ closeloop_folder_path = ['C:\NRI_BMI_Mahi_Project_files\All_Subjects\Subject_' S
 %folder_path = ['F:\Nikunj_Data\InMotion_Experiment_Data\' Subject_name '_Session' num2str(Sess_num) '\'];  
            
 % Flags to control the processing 
-train_classifier = 1;   %change4
-test_classifier = 0;
-use_GUI_for_testing = 1;    %change5
+train_classifier = 0;   %change4
+test_classifier = 1;
+use_GUI_for_testing = 1;    % always 1
 
 if train_classifier == 1
     disp('******************** Training Model **********************************');
@@ -106,8 +109,8 @@ if train_classifier == 1
     %remove_corrupted_epochs = [21 22 50 60]; %MR_ses1_cond3
     %remove_corrupted_epochs = [49 50 61]; %MR_ses1_cond4
     
-    manipulate_epochs = 1;
-    plot_ERPs = 1;
+    manipulate_epochs = 0;
+    plot_ERPs = 0;
     label_events = 0;       % process kinematics and label the events/triggers
     use_kinematics_old_code = 0;    % Use old code for InMotion
     kin_blocks = [1 2 3 4;                % Session 1
@@ -128,6 +131,7 @@ elseif test_classifier == 1
     manipulate_epochs = 0;
     plot_ERPs = 0;
     label_events = 0;       % process kinematics and label the events/triggers
+    use_kinematics_old_code = 0;    % Use old code for InMotion
     extract_emg_epochs = 0;
     use_phase_rand = 0;
    %standardize_data_flag = 0;
@@ -158,8 +162,9 @@ end
 %2. Filter cutoff frequency  
 hpfc = 0.1;     % HPF Cutoff frequency = 0.1 Hz    
 lpfc = 1;      % LPF Cutoff frequency = 1 Hz
-use_noncausal_filter = 0; % 1 - yes, use zero-phase filtfilt(); 0 - No, use filter()            %change6
-use_fir_filter = 0; % change7
+use_noncausal_filter = 0; % 1 - yes, use zero-phase filtfilt(); 0 - No, use filter()            %change5
+use_fir_filter = 0; % always 0
+use_band_pass = 0; %change6
 
 %3. Extracting epochs
 move_trig_label = 'S 16';  % 'S 32'; %'S  8'; %'100';
@@ -175,7 +180,7 @@ apply_epoch_standardization = 0;
 
 %5. Which Classifier to use?
 train_LDA_classifier = 0;           % Not used
-train_SVM_classifier = 1;
+train_SVM_classifier = 0;
 
 %6. Segment data for predicting kinematics
 segment_data_for_decoding_kinematics = 0;
@@ -225,35 +230,53 @@ if process_raw_eeg == 1
 %          'conv','off');
 
     % ****STEP 2: High Pass Filter data, 0.1 Hz, 4th order Butterworth
-    if use_fir_filter ==  1
-        num_hpf = fir_hp_filter;
-        den_hpf = 1;
-    else
-        [num_hpf,den_hpf] = butter(4,(hpfc/(raw_eeg_Fs/2)),'high');
-    end
-    %eeg_hpf = dfilt.df2(num_hpf,den_hpf);       % Create filter object. Not essential  
-    %   figure;
-    %   freqz(num_hpf,den_hpf,512,raw_eeg_Fs); % Better to use fvtool
-    %   fvtool(eeg_hpf,'Analysis','freq','Fs',raw_eeg_Fs);  % Essential to visualize frequency response properly.
-    HPFred_eeg = zeros(size(raw_eeg));
-    for i = 1:eeg_nbchns
-        %EEG.data(i,:) = detrend(EEG.data(i,:)); %Commented on 12-9-13
-        %HPFred_eeg(i,:) = filtfilt(num_hpf,den_hpf,double(EEG.data(i,:)));
-        
-        if use_noncausal_filter == 1
-            %HPFred_eeg(i,:) = filtfilt(eeg_hpf.sos.sosMatrix,eeg_hpf.sos.ScaleValues,double(raw_eeg(i,:))); % filtering with zero-phase delay
-            HPFred_eeg(i,:) = filtfilt(num_hpf,den_hpf,double(raw_eeg(i,:))); % filtering with zero-phase delay
-        else
-            HPFred_eeg(i,:) = filter(num_hpf,den_hpf,double(raw_eeg(i,:)));             % filtering with phase delay 
-        end
-    end
-    %EEG.data = HPFred_eeg;
+    if use_band_pass == 1
+            [b_bpf,a_bpf] = butter(2,([hpfc lpfc]./(raw_eeg_Fs/2)),'bandpass');
+            SOS_bpf = tf2sos(b_bpf,a_bpf);
+            bpf_df2sos = dfilt.df2sos(SOS_bpf);
+            %bpf_df2sos.States = zeros(2,2);
+            bpf_df2sos.PersistentMemory = true;
+            HPFred_eeg = zeros(size(raw_eeg));
 
-%     if use_fir_filter == 1
-%         %correct for filter delay
-%         grp_delay = 10000/2; 
-%         HPFred_eeg(:,1:grp_delay) = [];
-%     end
+            for i = 1:eeg_nbchns
+                if use_noncausal_filter == 1
+                    %HPFred_eeg(i,:) = filtfilt(eeg_hpf.sos.sosMatrix,eeg_hpf.sos.ScaleValues,double(raw_eeg(i,:))); % filtering with zero-phase delay
+                    HPFred_eeg(i,:) = filtfilt(bpf_df2sos,double(raw_eeg(i,:))); % filtering with zero-phase delay
+                else
+                    HPFred_eeg(i,:) = filter(bpf_df2sos,double(raw_eeg(i,:)));             % filtering with phase delay 
+                end
+            end
+    else
+            if use_fir_filter ==  1
+                num_hpf = fir_hp_filter;
+                den_hpf = 1;
+            else
+                [num_hpf,den_hpf] = butter(4,(hpfc/(raw_eeg_Fs/2)),'high');
+            end
+            %eeg_hpf = dfilt.df2(num_hpf,den_hpf);       % Create filter object. Not essential  
+            %   figure;
+            %   freqz(num_hpf,den_hpf,512,raw_eeg_Fs); % Better to use fvtool
+            %   fvtool(eeg_hpf,'Analysis','freq','Fs',raw_eeg_Fs);  % Essential to visualize frequency response properly.
+            HPFred_eeg = zeros(size(raw_eeg));
+            for i = 1:eeg_nbchns
+                %EEG.data(i,:) = detrend(EEG.data(i,:)); %Commented on 12-9-13
+                %HPFred_eeg(i,:) = filtfilt(num_hpf,den_hpf,double(EEG.data(i,:)));
+
+                if use_noncausal_filter == 1
+                    %HPFred_eeg(i,:) = filtfilt(eeg_hpf.sos.sosMatrix,eeg_hpf.sos.ScaleValues,double(raw_eeg(i,:))); % filtering with zero-phase delay
+                    HPFred_eeg(i,:) = filtfilt(num_hpf,den_hpf,double(raw_eeg(i,:))); % filtering with zero-phase delay
+                else
+                    HPFred_eeg(i,:) = filter(num_hpf,den_hpf,double(raw_eeg(i,:)));             % filtering with phase delay 
+                end
+            end
+            %EEG.data = HPFred_eeg;
+
+        %     if use_fir_filter == 1
+        %         %correct for filter delay
+        %         grp_delay = 10000/2; 
+        %         HPFred_eeg(:,1:grp_delay) = [];
+        %     end
+    end
     
     % ****STEP 3: Re-Reference data
     SPFred_eeg = HPFred_eeg;
@@ -294,37 +317,39 @@ if process_raw_eeg == 1
     end
         
     % ****STEP 4: Low Pass Filter data, 1 Hz, 4th order Butterworth
-    if use_fir_filter ==  1
-        num_lpf = fir_lp_filter;
-        den_lpf = 1;
+    if use_band_pass == 1
+        LPFred_eeg = SPFred_eeg;
     else
-        [num_lpf,den_lpf] = butter(4,(lpfc/(raw_eeg_Fs/2)));        % IIR Filter
-    end
-    % num_lpf = fir1(100,(lpfc/(raw_eeg_Fs/2))); den_lpf = 1;       % FIR Filter, Hamming Window, 40th order  
-    %eeg_lpf = dfilt.df2(num_lpf,den_lpf);       % Create filter object. Not essential
-    %   figure;
-    %   freqz(num_lpf,den_lpf,512,raw_eeg_Fs);  % Better to use fvtool
-    %   fvtool: http://www.mathworks.com/help/signal/ref/fvtool.html#f7-1176930
-    % fvtool(eeg_lpf,'Analysis','freq','Fs',raw_eeg_Fs);  % Essential to visualize frequency response properly.
-    LPFred_eeg = zeros(size(SPFred_eeg));
-    for i = 1:eeg_nbchns
-        %LPFred_eeg(i,:) = filtfilt(num_lpf,den_lpf,double(EEG.data(i,:)));
-        if use_noncausal_filter == 1
-            %LPFred_eeg(i,:) = filtfilt(eeg_lpf.sos.sosMatrix,eeg_lpf.sos.ScaleValues,double(SPFred_eeg(i,:))); % filtering with zero-phase delay
-            LPFred_eeg(i,:) = filtfilt(num_lpf,den_lpf,double(SPFred_eeg(i,:)));
+        if use_fir_filter ==  1
+            num_lpf = fir_lp_filter;
+            den_lpf = 1;
         else
-            LPFred_eeg(i,:) = filter(num_lpf,den_lpf,double(SPFred_eeg(i,:))); % filtering with phase delay
+            [num_lpf,den_lpf] = butter(4,(lpfc/(raw_eeg_Fs/2)));        % IIR Filter
         end
+        % num_lpf = fir1(100,(lpfc/(raw_eeg_Fs/2))); den_lpf = 1;       % FIR Filter, Hamming Window, 40th order  
+        %eeg_lpf = dfilt.df2(num_lpf,den_lpf);       % Create filter object. Not essential
+        %   figure;
+        %   freqz(num_lpf,den_lpf,512,raw_eeg_Fs);  % Better to use fvtool
+        %   fvtool: http://www.mathworks.com/help/signal/ref/fvtool.html#f7-1176930
+        % fvtool(eeg_lpf,'Analysis','freq','Fs',raw_eeg_Fs);  % Essential to visualize frequency response properly.
+        LPFred_eeg = zeros(size(SPFred_eeg));
+        for i = 1:eeg_nbchns
+            %LPFred_eeg(i,:) = filtfilt(num_lpf,den_lpf,double(EEG.data(i,:)));
+            if use_noncausal_filter == 1
+                %LPFred_eeg(i,:) = filtfilt(eeg_lpf.sos.sosMatrix,eeg_lpf.sos.ScaleValues,double(SPFred_eeg(i,:))); % filtering with zero-phase delay
+                LPFred_eeg(i,:) = filtfilt(num_lpf,den_lpf,double(SPFred_eeg(i,:)));
+            else
+                LPFred_eeg(i,:) = filter(num_lpf,den_lpf,double(SPFred_eeg(i,:))); % filtering with phase delay
+            end
+        end
+        %      if use_fir_filter == 1
+        %         %correct for filter delay
+        %         grp_delay = 1000/2; 
+        %         LPFred_eeg(:,1:grp_delay) = [];
+        %      end
     end
-%      if use_fir_filter == 1
-%         %correct for filter delay
-%         grp_delay = 1000/2; 
-%         LPFred_eeg(:,1:grp_delay) = [];
-%      end
     
-    EEG.data = LPFred_eeg;   
-    
-     
+    EEG.data = LPFred_eeg;      
              
     % **** STEP 5: Resample to 100 Hz 
     %Preproc_eeg = decimate(LPFred_eeg,5);    
@@ -701,7 +726,7 @@ if label_events == 1
                     continue;
                 else
                     %Redefine folder path
-                    folder_path = ['C:\NRI_BMI_Mahi_Project_files\All_Subjects\Subject_' Subject_name '\' Subject_name '_Session' num2str(Sess_num) '\']; % change8
+                    folder_path = ['C:\NRI_BMI_Mahi_Project_files\All_Subjects\Subject_' Subject_name '\' Subject_name '_Session' num2str(Sess_num) '\']; % change7
                     %kinematics_raw = importdata([Subject_name '_kinematics.mat']); % Raw data sampled at 200 Hz
                     kinematics_raw = dlmread([folder_path Subject_name '_ses' num2str(Sess_num) '_cond' num2str(Cond_num)...
                     '_block' num2str(kin_block_num) '_kinematics.txt'],'\t',14,1); % Raw data sampled at 200 Hz
@@ -1503,9 +1528,9 @@ if plot_ERPs == 1
     paper_font_size = 10;
     figure('Position',[1050 1300 3.5*116 2.5*116]); 
     %figure('units','normalized','outerposition',[0 0 1 1])
-    T_plot = tight_subplot(3,5,[0.01 0.01],[0.15 0.01],[0.1 0.1]);
+    T_plot = tight_subplot(numel(Channels_nos)/5,5,[0.01 0.01],[0.15 0.01],[0.1 0.1]);
     hold on;
-    plot_ind4 = 1;
+    plot_ind4 = 1; % Index of plot where axis should appear
     
     for ind4 = 1:length(Channels_nos)
         axes(T_plot(ind4));
@@ -1630,7 +1655,7 @@ if plot_ERPs == 1
     %Channels_nos = [9 32 10 44 48 14 49 15 19 53 20 54];
     ra1 = [-8 8];
     figure;
-    T_plot = tight_subplot(5,5,0.05,[0.1 0.1],[0.1 0.1]);
+    T_plot = tight_subplot(numel(Channels_nos)/5,5,0.05,[0.1 0.1],[0.1 0.1]);
     for ind4 = 1:length(Channels_nos)
         axes(T_plot(ind4));
         if ind4 == 25
@@ -1644,7 +1669,7 @@ if plot_ERPs == 1
     set(gca,'XTickLabel',{'-2'; '-1'; '0';'1';'2';'3'});  
     %export_fig MS_ses1_cond1_block80_ERP '-png' '-transparent';
     %print -dtiff -r450 LSGR_cond3_erp.tif
-   mtit([Subject_name ', Backdrive Mode, Day 1 & 2'],'fontsize',14,'yoff',0.025);
+   %mtit([Subject_name ', Backdrive Mode, Day 1 & 2'],'fontsize',14,'yoff',0.025);
     
     %% Comparing plots
 % %     % mychanns = [9;10;48;14;49];
@@ -1710,6 +1735,10 @@ if manipulate_epochs == 1
       file_identifier = [ file_identifier '_noncausal'];
    else
       file_identifier = [ file_identifier '_causal'];
+   end
+   
+   if use_band_pass == 1
+       file_identifier = [file_identifier '_bpf'];
    end
 
    filename1 = [folder_path Subject_name '_ses' num2str(Sess_num) '_cond' num2str(Cond_num) '_block' num2str(Block_num) '_average' file_identifier '.mat'];
@@ -1871,10 +1900,10 @@ if test_classifier == 1
    % if ~isempty(instrfind)
         % set and open serial port
         %obj = serial('com1','baudrate',115200,'parity','none','databits',8,'stopbits',1);   %InMotion
-        obj = serial('com20','baudrate',19200,'parity','none','databits',8,'stopbits',1); %Mahi               % change9
+        obj = serial('com3','baudrate',19200,'parity','none','databits',8,'stopbits',1); %Mahi               % change8
         fopen(obj);
     %else
-       % obj = -1;
+       %obj = -1;
         %disp('Serial Device Not FOUND!!');
     %end
 % obj = 1;
@@ -1890,7 +1919,7 @@ if test_classifier == 1
         user.testing_data.closeloop_block_num = 0;
         user.testing_data.closeloop_folder_path = closeloop_folder_path;
       
-    [Proc_EEG,Ovr_Spatial_Avg,All_Feature_Vec,GO_Prob,Num_Move_Counts,Markers,all_cloop_prob_threshold, all_cloop_cnts_threshold,Proc_EMG] = BMI_Mahi_Closeloop_GUI(user,obj);
+    [Proc_EEG,Ovr_Spatial_Avg,All_Feature_Vec,GO_Prob,Num_Move_Counts,Markers,all_cloop_prob_threshold, all_cloop_cnts_threshold,Proc_EMG,unproc_eeg] = BMI_Mahi_Closeloop_GUI(user,obj);
     
     else        
         % use script
@@ -1909,9 +1938,9 @@ if test_classifier == 1
  %   if exist('obj','var')
   %      if obj ~= -1
             % clear serial port
-            fclose(obj);
-            delete(obj);
-            clear('obj');
+           fclose(obj);
+           delete(obj);
+           clear('obj');
    %     end
    % end
     % Useful serial port command
@@ -1923,7 +1952,7 @@ if test_classifier == 1
 
 use_GUI_for_testing = 0;
 
-if use_GUI_for_testing == 0
+if use_GUI_for_testing == 1
     raw_Fs = 500;
     proc_Fs = 20;
     downsamp_factor = raw_Fs/proc_Fs;

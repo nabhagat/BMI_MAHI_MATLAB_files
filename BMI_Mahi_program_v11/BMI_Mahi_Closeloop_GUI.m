@@ -22,7 +22,7 @@ function varargout = BMI_Mahi_Closeloop_GUI(varargin)
 
 % Edit the above text to modify the response to help BMI_Mahi_Closeloop_GUI
 
-% Last Modified by GUIDE v2.5 06-Oct-2014 09:11:20
+% Last Modified by GUIDE v2.5 24-Jul-2015 11:09:50
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -82,6 +82,9 @@ handles.system.use_mahi_exo = 0;
 handles.system.use_eeg = 0;
 handles.system.use_eeg_emg = 0;
 handles.system.use_emg = 0;
+handles.system.left_impaired = 0;
+handles.system.right_impaired = 0;
+
 
 handles.system.serial_interface.serial_object = varargin{2};
 
@@ -92,10 +95,9 @@ handles.reset_eeg_control_timer = timer('TimerFcn', {@reset_eeg_control_timer_Ca
                                      'StartDelay', 0, 'Period',1,'ExecutionMode','fixedRate');
 
 % Start flexion_game gui
-eval('flexion_game');
-global hflexion_game
+% eval('flexion_game');                     % commented 7-24-15
+% global hflexion_game
 global datahdr marker_block
-
 
 % Update handles structure
 guidata(hObject, handles);
@@ -138,6 +140,7 @@ function varargout = BMI_Mahi_Closeloop_GUI_OutputFcn(hObject, eventdata, handle
 global processed_eeg processed_emg Overall_spatial_chan_avg all_feature_vectors GO_Probabilities
 global move_counts marker_block all_cloop_prob_threshold all_cloop_cnts_threshold
 global downsamp_factor
+global unprocessed_eeg % test_change
 
 varargout{1} = processed_eeg;       
 varargout{2} = Overall_spatial_chan_avg;
@@ -149,6 +152,7 @@ varargout{7} = all_cloop_prob_threshold;
 varargout{8} = all_cloop_cnts_threshold;
 %varargout{9} = downsample(processed_emg',downsamp_factor)';
 varargout{9} = resample(processed_emg',6,1)';
+varargout{10} = unprocessed_eeg; % test_change
 
 % The figure can be deleted now
 delete(handles.figure1);
@@ -302,15 +306,17 @@ function pushbutton_start_closeloop_Callback(hObject, eventdata, handles)
     global rest_trig_label
     global block_start_stop_label
     global eeg_control
+    global emg_control_channels
+    global hflexion_game
     
     % Load Performance variable from .mat file
     handles.user.calibration_data.folder_path = ['C:\NRI_BMI_Mahi_Project_files\All_Subjects\Subject_' handles.user.calibration_data.subject_initials '\' ...
                                                 handles.user.calibration_data.subject_initials '_Session'...
-                                                num2str(handles.user.calibration_data.sess_num) '\'];   %change8
+                                                num2str(handles.user.calibration_data.sess_num) '\'];   %change10
                                             
     handles.user.testing_data.closeloop_folder_path = ['C:\NRI_BMI_Mahi_Project_files\All_Subjects\Subject_' handles.user.calibration_data.subject_initials '\' ...
                                                 handles.user.calibration_data.subject_initials '_Session'...
-                                                num2str(handles.user.testing_data.closeloop_sess_num) '\'];     %change9
+                                                num2str(handles.user.testing_data.closeloop_sess_num) '\'];     %change11
     
                                             
     handles.user.testing_data.classifier_filename = [handles.user.calibration_data.folder_path...
@@ -322,19 +328,31 @@ function pushbutton_start_closeloop_Callback(hObject, eventdata, handles)
    
    handles.user.testing_data.closeloop_block_num = handles.user.testing_data.closeloop_block_num + 1;
    set(handles.textbox_cloop_block_num,'String',num2str(handles.user.testing_data.closeloop_block_num));          
-             
-   handles.user.testing_data.emg_decisions_fileID = fopen([handles.user.testing_data.closeloop_folder_path handles.user.calibration_data.subject_initials...
-                '_ses' num2str(handles.user.testing_data.closeloop_sess_num) '_block' num2str(handles.user.testing_data.closeloop_block_num)...
-                '_closeloop_emg_decisions.txt'],'w');
-  
-   fprintf(handles.user.testing_data.emg_decisions_fileID,'rms_biceps \t rms_triceps \t bicep_thr \t tricep_thr \t Decision \t Timer_status \n'); 
-            
+   
+   % commented 4-9-15
+   %handles.user.testing_data.emg_decisions_fileID = fopen([handles.user.testing_data.closeloop_folder_path handles.user.calibration_data.subject_initials...
+   %            '_ses' num2str(handles.user.testing_data.closeloop_sess_num) '_block' num2str(handles.user.testing_data.closeloop_block_num)...
+   %            '_closeloop_emg_decisions.txt'],'w');
+   
+   % commented 4-9-15
+   %fprintf(handles.user.testing_data.emg_decisions_fileID,'rms_biceps \t rms_triceps \t bicep_thr \t tricep_thr \t Decision \t Timer_status \n');            
             
     load(handles.user.testing_data.classifier_filename);
     CloopClassifier = Performance;
     classifier_channels = CloopClassifier.classchannels;
-    emg_classifier_channels = [17 22 41 46];
-    %classifier_channels = [9 10 16 17];     % change10
+    %classifier_channels = [1 14 28 53]; %test_change
+    emg_classifier_channels = [42 41 51 17 45 46 55 22]; % [LB1 LB2 LT1 LT2 RB1 RB2 RT1 RT2] % change12
+        
+    if handles.system.left_impaired 
+        emg_control_channels = [1 2];
+    elseif handles.system.right_impaired
+        emg_control_channels = [3 4];
+    else 
+        errordlg('Please select which hand is impaired','EMG control error');
+        return
+    end
+    set(handles.checkbox_left_hand_impaired,'Enable','off');
+    set(handles.checkbox_right_hand_impaired,'Enable','off');
 
     resamp_Fs = 20; % required Sampling Freq
     window_length = CloopClassifier.smart_window_length*resamp_Fs + 1; % No. of samples required, Earlier  = length(CloopClassifier.move_window(1):1/resamp_Fs:CloopClassifier.move_window(2));   
@@ -347,15 +365,15 @@ function pushbutton_start_closeloop_Callback(hObject, eventdata, handles)
     % Classifier parameters
     cloop_prob_threshold = CloopClassifier.opt_prob_threshold;            
     cloop_cnts_threshold  = CloopClassifier.consecutive_cnts_threshold;        % Number of consecutive valid cnts required to accept as 'GO'
-    emg_mvc_threshold = 25;             % change
+    emg_mvc_threshold = 25;             % change13
     emg_tricep_threshold = 25;
 
     DEFINE_GO = 1;
     DEFINE_NOGO = 2;
-    target_trig_label = 'S  8';
+    target_trig_label = 'S  8';                 % change14
     move_trig_label = 'S 16';  % 'S 32'; %'S  8'; %'100';   
     rest_trig_label = 'S  2';  % 'S  2'; %'200';
-    block_start_stop_label = 'S 10';
+    block_start_stop_label = 'S 34'; %'S 10';
     
     % Change for individual recorder host
     recorderip = '127.0.0.1';
@@ -368,7 +386,7 @@ function pushbutton_start_closeloop_Callback(hObject, eventdata, handles)
         disp('connection established');
     end
     
-    % Define and start timer for reading from socket every 100 msec
+    % Define and start timer for reading from socket every 10 msec
     readEEGTimer = timer('TimerFcn', {@EEGTimer_Callback,hObject}, 'Period', 0.01, 'ExecutionMode','fixedRate'); 
     start(readEEGTimer);
     eeg_control =  0;
@@ -383,6 +401,12 @@ function pushbutton_start_closeloop_Callback(hObject, eventdata, handles)
     set(handles.editbox_emg_threshold,'String',num2str(emg_mvc_threshold));
     set(handles.editbox_triceps_threshold,'String',num2str(emg_tricep_threshold));
     
+    if ~handles.system.use_mahi_exo
+        eval('flexion_game');                     % added 7-24-15
+        disp(hflexion_game);
+    else
+        disp(hflexion_game);
+    end
     
     guidata(hObject,handles);
 
@@ -516,8 +540,8 @@ end
     if get(handles.checkbox_auto_save_data,'Value')
         save_cloop_data(handles);
     end
-    
-       fclose(handles.user.testing_data.emg_decisions_fileID);
+       % commented 4-9-15
+       %fclose(handles.user.testing_data.emg_decisions_fileID);
     
     guidata(hObject,handles);
 
@@ -554,6 +578,7 @@ function EEGTimer_Callback(timer_object,eventdata,hObject)
     global hflexion_game
     global datahdr
     global eeg_control
+    global emg_control_channels
     
     % 2. Variables initialized in EEGTimer_Callback()
     global orig_Fs
@@ -563,15 +588,18 @@ function EEGTimer_Callback(timer_object,eventdata,hObject)
     global total_chnns
     global downsamp_factor pkt_size emg_pkt_size filt_order
     global new_pkt hp_filt_pkt lp_filt_pkt spatial_filt_pkt emg_bp_filt_pkt
-    global prev_pkt prev_hp_filt_pkt prev_lp_filt_pkt prev_spatial_filt_pkt prev_emg_bp_filt_pkt
-    global emg_new_pkt emg_abs_diff_pkt emg_mvc_pkt emg_diff_pkt emg_rms_pkt
-    global emg_prev_pkt prev_emg_abs_diff_pkt prev_emg_mvc_pkt prev_emg_diff_pkt
+    %global prev_pkt prev_spatial_filt_pkt  
+    global hpf_df2sos lpf_df2sos emg_bpf_df2sos prev_lp_filt_pkt_3D prev_hp_filt_pkt_3D prev_emg_bp_filt_pkt_3D
+    global emg_new_pkt emg_diff_pkt emg_rms_pkt
+    %global emg_prev_pkt prev_emg_abs_diff_pkt prev_emg_mvc_pkt prev_emg_diff_pkt emg_abs_diff_pkt emg_mvc_pkt
     global firstblock marker_block marker_type
     global processed_eeg processed_emg Overall_spatial_chan_avg all_feature_vectors GO_Probabilities
     global valid_move_cnt move_counts feature_matrix sliding_window start_prediction kcount
     global all_cloop_prob_threshold all_cloop_cnts_threshold
     global required_chnns L_LAP M_CAR
-       
+    % ----- unused variables
+    global unprocessed_eeg % test_change
+    %global  prev_hp_filt_pkt  prev_lp_filt_pkt prev_emg_bp_filt_pkt
     
             %% ------------------ Main reading loop ----------------------------------------
         header_size = 24;
@@ -604,14 +632,33 @@ function EEGTimer_Callback(timer_object,eventdata,hObject)
                             filt_order = 4;
                             total_chnns = double(props.channelCount);
                             new_pkt = zeros(total_chnns,pkt_size);
-                            prev_pkt = zeros(total_chnns,pkt_size);
+                            %prev_pkt = zeros(total_chnns,pkt_size);
                             hp_filt_pkt = zeros(total_chnns,pkt_size);
-                            prev_hp_filt_pkt =  zeros(total_chnns,pkt_size);
+                            %prev_hp_filt_pkt =  zeros(total_chnns,pkt_size);
+                            prev_hp_filt_pkt_3D = zeros(2,2,total_chnns);                                                                                                              
                             lp_filt_pkt = zeros(length(classifier_channels),pkt_size);      % Use only classifier channels
-                            prev_lp_filt_pkt = zeros(length(classifier_channels),pkt_size);     
+                            %prev_lp_filt_pkt = zeros(length(classifier_channels),pkt_size);     
+                            prev_lp_filt_pkt_3D = zeros(2,2,length(classifier_channels));     
                             spatial_filt_pkt = zeros(total_chnns,pkt_size);
-                            prev_spatial_filt_pkt = zeros(total_chnns,pkt_size);
+                            %prev_spatial_filt_pkt = zeros(total_chnns,pkt_size);
                             
+                            % Create 0.1 Hz high pass filter dfilt object
+                            [b_hpf,a_hpf] = butter(4,(0.1/(orig_Fs/2)),'high');
+                            SOS_hpf = tf2sos(b_hpf,a_hpf);
+                            hpf_df2sos = dfilt.df2sos(SOS_hpf);
+                            hpf_df2sos.PersistentMemory = true;
+                            
+                            % Create 1 Hz low pass filter dfilt object
+                            [b_lpf,a_lpf] = butter(4,(1/(orig_Fs/2)),'low');
+                            SOS_lpf = tf2sos(b_lpf,a_lpf);
+                            lpf_df2sos = dfilt.df2sos(SOS_lpf);
+                            lpf_df2sos.PersistentMemory = true;
+                            
+                            % Create EMG band-pass filter (30 - 200 Hz) dfilt object
+                            [emg_b_bpf,emg_a_bpf] = butter(2,([30 200]./(orig_Fs/2)),'bandpass');
+                            emg_SOS_bpf = tf2sos(emg_b_bpf,emg_a_bpf);
+                            emg_bpf_df2sos = dfilt.df2sos(emg_SOS_bpf);
+                            emg_bpf_df2sos.PersistentMemory = true;
 
                             firstblock = true;          % First block of data read in 
                             marker_block = [];
@@ -619,7 +666,7 @@ function EEGTimer_Callback(timer_object,eventdata,hObject)
 
                             processed_eeg = [];
                             processed_emg = [];
-                            %unprocessed_eeg = [];
+                            unprocessed_eeg = [];
                             Overall_spatial_chan_avg = [];
                             %lpf_eeg = [];
                             %raster_signal = [];
@@ -659,22 +706,39 @@ function EEGTimer_Callback(timer_object,eventdata,hObject)
                                 M_CAR(:,car_chnns_eliminate(elim)) = 0;
                             end
 
-                            % Create Large Laplacian Matrix - Need to revise
+                            % Create Large Laplacian Matrix - Using larger Laplacian filter
                             if total_chnns == 64
                             Neighbors = [
-                                         38, 1, 37, 48, 39;
-                                          5, 28, 4, 14, 6;
-                                         39, 2, 38, 49, 40;
+                                         % Row F
+                                         4,  1, 3, 13, 5;
+                                        38, 1, 37, 48, 39;
+                                         5, 28, 4, 14, 6;       
+                                        39, 2, 38, 49, 40;
+                                         6,  2, 5, 15, 7;
+                                         % Row FC
+                                         43, 34, 42, 52, 32;
                                           9, 34, 8, 19, 10;
-                                         32, 28, 43, 53, 44;
+                                         32, 28, 43, 53, 44;    
                                          10, 35, 9, 11, 20;
+                                         44, 35, 32, 54, 45; 
+                                         % Row C
+                                         13, 4, 12, 24, 14;
                                          48, 38, 47, 57, 49;
                                          14, 5, 13, 25, 15;
                                          49, 39, 48, 58, 50;
+                                         15, 6, 14, 26, 16;
+                                         % Row CP
+                                         52, 43, 51, 60, 53;
                                          19, 9, 18, 61, 20; 
                                          53, 32, 52, 62, 54;
-                                         20, 10, 19, 63, 21     
-                                         ];
+                                         20, 10, 19, 63, 21;
+                                         54, 44, 53, 64, 55;
+                                         % Row P
+                                         24, 13, 23, 29, 25;
+                                         57, 48, 56, 30, 58;
+                                         25, 14, 24, 30, 26;
+                                         58, 49, 57, 31, 59;
+                                         26, 15, 25, 31, 27];
                             elseif total_chnns == 32
                             % For modified 32 channels          
                             % Classifier channels = [9 10 16 17];
@@ -709,19 +773,20 @@ function EEGTimer_Callback(timer_object,eventdata,hObject)
                                 
                                 % Initialize EMG variables here because
                                 % packet size changes for real-time and simulated EEG recordings 
-                                %emg_pkt_size = datahdr.points;
-                                emg_pkt_size = int32((6/resamp_Fs)*orig_Fs);           % 6 samples --> 300ms @ 20 Hz, 150 samples --> 300ms @ 500 Hz
+                                % emg_pkt_size = datahdr.points;
+                                emg_pkt_size = int32((6/resamp_Fs)*orig_Fs);           % 6 samples --> 300ms @ 20 Hz, 150 samples --> 300ms @ 500 Hz; EMG window length = 300 ms
                                 emg_new_pkt = zeros(length(emg_classifier_channels),emg_pkt_size);
-                                emg_prev_pkt = zeros(length(emg_classifier_channels),emg_pkt_size);
+                                %emg_prev_pkt = zeros(length(emg_classifier_channels),emg_pkt_size);
                                 emg_bp_filt_pkt = zeros(length(emg_classifier_channels),emg_pkt_size);      % Use only EMG channels
-                                prev_emg_bp_filt_pkt = zeros(length(emg_classifier_channels),emg_pkt_size);
-                                emg_abs_diff_pkt = zeros(2,emg_pkt_size);
+                                %prev_emg_bp_filt_pkt = zeros(length(emg_classifier_channels),emg_pkt_size);
+                                prev_emg_bp_filt_pkt_3D = zeros(2,2,length(emg_classifier_channels));
+                                % emg_abs_diff_pkt = zeros(2,emg_pkt_size);
                                 emg_diff_pkt = zeros(2,emg_pkt_size);
-                                emg_mvc_pkt = zeros(2,emg_pkt_size);
+                                % emg_mvc_pkt = zeros(2,emg_pkt_size);
                                 emg_rms_pkt = [0;0];
-                                prev_emg_abs_diff_pkt = zeros(2,emg_pkt_size);
-                                prev_emg_mvc_pkt = zeros(2,emg_pkt_size);
-                                prev_emg_diff_pkt = zeros(2,emg_pkt_size);
+                                % prev_emg_abs_diff_pkt = zeros(2,emg_pkt_size);
+                                % prev_emg_mvc_pkt = zeros(2,emg_pkt_size);
+                                % prev_emg_diff_pkt = zeros(2,emg_pkt_size);
                                 
                                 
                                 if start_prediction == true     % Used when calling ball-game GUI                                                                          
@@ -773,10 +838,14 @@ function EEGTimer_Callback(timer_object,eventdata,hObject)
                                        % EMG Bandpass Filter
 %                                       emg_new_pkt = EEGData(emg_classifier_channels,:);
                                        for num_chns = 1:length(emg_classifier_channels)
-                                            emg_bp_filt_pkt(num_chns,:) = pkt_bp_filter(emg_new_pkt(num_chns,:),...
-                                               emg_prev_pkt(num_chns,(emg_pkt_size - filt_order)+1:emg_pkt_size),...
-                                               prev_emg_bp_filt_pkt(num_chns,(emg_pkt_size - filt_order)+1:emg_pkt_size),...
-                                               orig_Fs);
+                                            %emg_bp_filt_pkt(num_chns,:) = pkt_bp_filter(emg_new_pkt(num_chns,:),...
+                                            % emg_prev_pkt(num_chns,(emg_pkt_size - filt_order)+1:emg_pkt_size),...
+                                            % prev_emg_bp_filt_pkt(num_chns,(emg_pkt_size - filt_order)+1:emg_pkt_size),...
+                                            % orig_Fs);
+                                            
+                                            emg_bpf_df2sos.States = prev_emg_bp_filt_pkt_3D(:,:,num_chns);
+                                            emg_bp_filt_pkt(num_chns,:) = filter(emg_bpf_df2sos, emg_new_pkt(num_chns,:));
+                                            prev_emg_bp_filt_pkt_3D(:,:,num_chns) = emg_bpf_df2sos.States;
                                        end
 
 %                                        emg_abs_diff_pkt = [abs(emg_bp_filt_pkt(1,:) - emg_bp_filt_pkt(3,:));            % Biceps
@@ -790,18 +859,22 @@ function EEGTimer_Callback(timer_object,eventdata,hObject)
 %                                                orig_Fs);
 %                                        end
 
-                                           emg_diff_pkt = [emg_bp_filt_pkt(1,:) - emg_bp_filt_pkt(3,:);            % Biceps
-                                                                         emg_bp_filt_pkt(2,:) - emg_bp_filt_pkt(4,:)];           % Triceps   
+                                           emg_diff_pkt = [emg_bp_filt_pkt(1,:) - emg_bp_filt_pkt(2,:);            % Left Biceps % changed 7-24-2015 
+                                                                         emg_bp_filt_pkt(3,:) - emg_bp_filt_pkt(4,:);            % Left Triceps
+                                                                         emg_bp_filt_pkt(5,:) - emg_bp_filt_pkt(6,:);            % Right Biceps
+                                                                         emg_bp_filt_pkt(7,:) - emg_bp_filt_pkt(8,:)];           % Right Triceps   
+                                                                     
                                        % Calculate EMG RMS value
-                                           emg_rms_pkt = [sqrt(mean(emg_diff_pkt(1,:).^2));...
-                                                                                                      sqrt(mean(emg_diff_pkt(2,:).^2))];
+                                           %emg_rms_pkt = [sqrt(mean(emg_diff_pkt(1,:).^2));...
+                                            %                                                          sqrt(mean(emg_diff_pkt(2,:).^2))]; % commented 7-24-2015 
+                                            emg_rms_pkt = sqrt(mean(emg_diff_pkt.^2,2)); 
                                                                                                   
-                                         emg_prev_pkt = emg_new_pkt;
-                                        prev_emg_bp_filt_pkt = emg_bp_filt_pkt;
+                                        % emg_prev_pkt = emg_new_pkt;
+                                        % prev_emg_bp_filt_pkt = emg_bp_filt_pkt;
         %                                 prev_emg_abs_diff_pkt = emg_abs_diff_pkt;
         %                                 prev_emg_mvc_pkt = emg_mvc_pkt;
         %                                 processed_emg = [processed_emg emg_mvc_pkt];                            
-                                        prev_emg_diff_pkt = emg_diff_pkt;
+                                        % prev_emg_diff_pkt = emg_diff_pkt;
                                         processed_emg = [processed_emg emg_rms_pkt];                        % Interpolate later on     
                                end
                                                              
@@ -815,23 +888,32 @@ function EEGTimer_Callback(timer_object,eventdata,hObject)
                               
                                % High pass filter 0.1 Hz
                                for no_chns = 1:length(required_chnns)
-                                   hp_filt_pkt(required_chnns(no_chns),:) = pkt_hp_filter(new_pkt(required_chnns(no_chns),:),...
-                                       prev_pkt(required_chnns(no_chns),(pkt_size - filt_order)+1:pkt_size),...
-                                       prev_hp_filt_pkt(required_chnns(no_chns),(pkt_size - filt_order)+1:pkt_size),...
-                                       orig_Fs);
-                               end
-
+%                                    hp_filt_pkt(required_chnns(no_chns),:) = pkt_hp_filter(new_pkt(required_chnns(no_chns),:),...
+%                                        prev_pkt(required_chnns(no_chns),(pkt_size - filt_order)+1:pkt_size),...
+%                                        prev_hp_filt_pkt(required_chnns(no_chns),(pkt_size - filt_order)+1:pkt_size),...
+%                                        orig_Fs);
+                                   
+                                   % High pass filter using dfilt()
+                                   hpf_df2sos.States = prev_hp_filt_pkt_3D(:,:,required_chnns(no_chns));
+                                   hp_filt_pkt(required_chnns(no_chns),:) = filter(hpf_df2sos,new_pkt(required_chnns(no_chns),:));
+                                   prev_hp_filt_pkt_3D(:,:,required_chnns(no_chns)) = hpf_df2sos.States;
+                               end                            
+                               
                                % Re-reference the data                                                     
                                %spatial_filt_pkt = M_CAR*hp_filt_pkt;      % Common Average referencing  
-                               spatial_filt_pkt = L_LAP*hp_filt_pkt;          % Large Laplacian filtering
-
+                               spatial_filt_pkt = L_LAP*hp_filt_pkt;          % Large Laplacian filtering                             
+                               
                                % Low pass filter 1 Hz,
                                % prev_spatial_filt_pkt
                                for no_chns = 1:length(classifier_channels)                                
-                                   lp_filt_pkt(no_chns,:) = pkt_lp_filter(spatial_filt_pkt(classifier_channels(no_chns),:),...
-                                       prev_spatial_filt_pkt(classifier_channels(no_chns),(pkt_size - filt_order)+1:pkt_size),...
-                                       prev_lp_filt_pkt(no_chns,(pkt_size - filt_order)+1:pkt_size),...
-                                       orig_Fs);
+%                                    lp_filt_pkt(no_chns,:) = pkt_lp_filter(spatial_filt_pkt(classifier_channels(no_chns),:),...
+%                                        prev_spatial_filt_pkt(classifier_channels(no_chns),(pkt_size - filt_order)+1:pkt_size),...
+%                                        prev_lp_filt_pkt(no_chns,(pkt_size - filt_order)+1:pkt_size),...
+%                                        orig_Fs);
+                                        % Low pass filter using dfilt()
+                                        lpf_df2sos.States = prev_lp_filt_pkt_3D(:,:,no_chns);
+                                        lp_filt_pkt(no_chns,:) = filter(lpf_df2sos,spatial_filt_pkt(classifier_channels(no_chns),:));
+                                        prev_lp_filt_pkt_3D(:,:,no_chns) = lpf_df2sos.States;
                                end
 
                                % Downsample data to 20 Hz
@@ -931,45 +1013,48 @@ function EEGTimer_Callback(timer_object,eventdata,hObject)
 
            end % end if start_prediction == true
                                 % Miscellaneous
-                                prev_pkt = new_pkt;
-                                prev_hp_filt_pkt = hp_filt_pkt;
-                                prev_lp_filt_pkt = lp_filt_pkt;
-                                prev_spatial_filt_pkt = spatial_filt_pkt;
+%                                prev_pkt = new_pkt;
+                                %prev_hp_filt_pkt = hp_filt_pkt;
+                                %prev_lp_filt_pkt = lp_filt_pkt;
+                                %prev_spatial_filt_pkt = spatial_filt_pkt;
 %                                 prev_emg_bp_filt_pkt = emg_bp_filt_pkt;
 %                                 prev_emg_abs_diff_pkt = emg_abs_diff_pkt;
 %                                 prev_emg_mvc_pkt = emg_mvc_pkt;
                                 
-        %                        unprocessed_eeg = [unprocessed_eeg new_pkt];
+                                unprocessed_eeg = [unprocessed_eeg emg_new_pkt];
                                 processed_eeg   = [processed_eeg Filtered_EEG_Downsamp];
-%                                 processed_emg = [processed_emg Filtered_EMG_Downsamp];
+                                %processed_eeg   = [processed_eeg emg_bp_filt_pkt]; % test_change
+
                                 Overall_spatial_chan_avg = [Overall_spatial_chan_avg spatial_chan_avg];
         %                         lpf_eeg = [lpf_eeg lp_filt_pkt];
 
                             end   % end if dims_pkt > pkt_size
 
                                 if handles.system.use_emg == 1
-                                   eeg_control = 1;  % change13
+                                   eeg_control = 1;  % change14
                                 end
                                 
                                 if eeg_control == 1
                                         %if (max(emg_mvc_pkt(1,:)) >= emg_mvc_threshold) || (max(emg_mvc_pkt(2,:)) >= 7.2)            % 1 - Biceps, 2 - Triceps, emg_mvc_threshold   - change
-                                        if ((emg_rms_pkt(1) >= emg_mvc_threshold) || (emg_rms_pkt(2) >= emg_tricep_threshold))            
+                                        if ((emg_rms_pkt(emg_control_channels(1)) >= emg_mvc_threshold) || (emg_rms_pkt(emg_control_channels(2)) >= emg_tricep_threshold))            
                                                 if handles.system.serial_interface.enable_serial
-                                                        fwrite(handles.system.serial_interface.serial_object,[7]);                
+                                                        fwrite(handles.system.serial_interface.serial_object,[7]);                 % commented 4-9-15
                                                 elseif strcmp(get(hflexion_game.hball,'Visible'),'on') && strcmp(get(hflexion_game.move_ball_timer,'Running'),'off')
                                                         start(hflexion_game.move_ball_timer);
                                                 else
                                                     %ignore
                                                 end          
-                                                fprintf(handles.user.testing_data.emg_decisions_fileID,'%6.3f \t %6.3f \t 1 \t %d \n',...
-                                                    emg_rms_pkt(1), emg_rms_pkt(2), strcmp(get(handles.reset_eeg_control_timer,'Running'),'on')); 
+                                                 % commented 4-9-15
+                                                %fprintf(handles.user.testing_data.emg_decisions_fileID,'%6.3f \t %6.3f \t 1 \t %d \n',...
+                                                 %   emg_rms_pkt(1), emg_rms_pkt(2), strcmp(get(handles.reset_eeg_control_timer,'Running'),'on')); 
                                                 disp('--->EEG+EMG GO');
                                                 marker_block = [marker_block; [datahdr.block*datahdr.points,400]];
                                                 eeg_control = 0;
                                        else
-                                           %disp('.');
-                                            fprintf(handles.user.testing_data.emg_decisions_fileID,'%6.3f \t %6.3f \t %6.3f \t %6.3f \t 0 \t %d \n',...
-                                               emg_rms_pkt(1), emg_rms_pkt(2), emg_mvc_threshold, emg_tricep_threshold, strcmp(get(handles.reset_eeg_control_timer,'Running'),'on')); 
+                                           disp('.');
+                                            % commented 4-9-15
+                                            %fprintf(handles.user.testing_data.emg_decisions_fileID,'%6.3f \t %6.3f \t %6.3f \t %6.3f \t 0 \t %d \n',...
+                                            %  emg_rms_pkt(1), emg_rms_pkt(2), emg_mvc_threshold, emg_tricep_threshold, strcmp(get(handles.reset_eeg_control_timer,'Running'),'on')); 
                                         end
                                 end
                                 
@@ -1252,7 +1337,6 @@ handles.system.use_eeg_emg = get(hObject,'Value');
 function checkbox_use_emg_Callback(hObject, eventdata, handles)
 handles.system.use_emg = get(hObject,'Value');    
  guidata(hObject,handles);
-
  
 function checkbox_use_mahi_exo_Callback(hObject, eventdata, handles)
  handles.system.use_mahi_exo = get(hObject,'Value');    
@@ -1265,4 +1349,22 @@ function checkbox_use_mahi_exo_Callback(hObject, eventdata, handles)
  
 
 
+% --- Executes on button press in checkbox_left_hand_impaired.
+function checkbox_left_hand_impaired_Callback(hObject, eventdata, handles)
+% hObject    handle to checkbox_left_hand_impaired (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
 
+% Hint: get(hObject,'Value') returns toggle state of checkbox_left_hand_impaired
+handles.system.left_impaired = get(hObject,'Value');
+guidata(hObject,handles);
+
+% --- Executes on button press in checkbox_right_hand_impaired.
+function checkbox_right_hand_impaired_Callback(hObject, eventdata, handles)
+% hObject    handle to checkbox_right_hand_impaired (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% Hint: get(hObject,'Value') returns toggle state of checkbox_right_hand_impaired
+handles.system.right_impaired = get(hObject,'Value');
+guidata(hObject,handles);

@@ -21,13 +21,13 @@ myColors = ['g','r','m','k','y','c','m','g','r','b','k','b','r','m','g','r','b',
     'g','r','b','k','y','c','m','g','r','b','k','b','r','m','g','r','b','k','y','c','m'];
 
 % Subject Details
-Subject_name = 'PLSH';
+Subject_name = 'BNBO';
 Sess_num = '2';
-Cond_num = 3;  % 1 - Active; 2 - Passive; 3 - Triggered; 4 - Observation 
+Cond_num = 1;  % 1 - Active; 2 - Passive; 3 - Triggered; 4 - Observation 
 Block_num = 160;
 
 folder_path = ['C:\NRI_BMI_Mahi_Project_files\All_Subjects\Subject_' Subject_name '\' Subject_name '_Session' num2str(Sess_num) '\']; % change2
-load([folder_path Subject_name '_ses' num2str(Sess_num) '_cond' num2str(Cond_num) '_block' num2str(Block_num) '_average_causal.mat']);      % Always use causal for training classifier
+load([folder_path Subject_name '_ses' num2str(Sess_num) '_cond' num2str(Cond_num) '_block' num2str(Block_num) '_average_causal_bpf.mat']);      % Always use causal for training classifier
 
 % Flags to control the Classifier Training
 %-. Use separate move and rest epochs? (Always yes). 0 - No; 1 - yes
@@ -80,7 +80,7 @@ downsamp_factor = Average.Fs_eeg/Fs_eeg;
     end
 
 %0. Use previously trained models? Ex: CVO, smart_features, etc. 
-use_previous_models = 1;    
+use_previous_models = 0;    
 regular_or_chance_level_classifier = 1; % 0 - chance_level; 1 - Regular classifier design
 use_conventional_features = 0;              % change                              
 use_smart_features = 1;
@@ -106,7 +106,7 @@ end
 if use_previous_models == 1
     classchannels = prev_Performance.classchannels;
 else
-    classchannels = Average.RP_chans(1:4);
+    classchannels = Average.RP_chans(1:4); % Needs to be optimized
     %classchannels = [14 9 48];
 end
 
@@ -119,8 +119,8 @@ end
     minval_SVM_scaling = 0;
 
 %-. Use Hybrid Classification
-    use_svm_classifier = 0;
-    use_src_classifier = 1;
+    use_svm_classifier = 1;
+    use_src_classifier = 0;
 
 %3. Use Smart/Conventional features
     keep_bad_trials = 0;   % Remove bad trials only from Smart Features
@@ -281,22 +281,22 @@ for nt = 1:size(move_ch_avg_ini,1)
 end
 
 if wl == length(window_length_range) 
-    figure;
-    subplot(2,1,1); hold on;
-    plot(move_erp_time,move_ch_avg_ini(good_move_trials,:),'b');
-    title([Subject_name ', Cond ' num2str(Cond_num) ', # Good trials = ' num2str(length(good_move_trials)) ' (' num2str(size(move_ch_avg_ini,1)) ')'],'FontSize',12);
-    hold on;
-    plot(move_erp_time,move_ch_avg_ini(bad_move_trials,:),'r');
-    set(gca,'YDir','reverse');
-    grid on;
-    axis([-3.5 1 -15 10]);
-
-    subplot(2,1,2); hold on;
-    plot(rest_erp_time,rest_ch_avg_ini(good_move_trials,:),'b');
-    plot(rest_erp_time,rest_ch_avg_ini(bad_move_trials,:),'r');
-    set(gca,'YDir','reverse');
-    grid on;
-    axis([-3.5 1 -15 10]);
+%     figure;
+%     subplot(2,1,1); hold on;
+%     plot(move_erp_time,move_ch_avg_ini(good_move_trials,:),'b');
+%     title([Subject_name ', Cond ' num2str(Cond_num) ', # Good trials = ' num2str(length(good_move_trials)) ' (' num2str(size(move_ch_avg_ini,1)) ')'],'FontSize',12);
+%     hold on;
+%     plot(move_erp_time,move_ch_avg_ini(bad_move_trials,:),'r');
+%     set(gca,'YDir','reverse');
+%     grid on;
+%     axis([-3.5 1 -15 10]);
+% 
+%     subplot(2,1,2); hold on;
+%     plot(rest_erp_time,rest_ch_avg_ini(good_move_trials,:),'b');
+%     plot(rest_erp_time,rest_ch_avg_ini(bad_move_trials,:),'r');
+%     set(gca,'YDir','reverse');
+%     grid on;
+%     axis([-3.5 1 -15 10]);
 end
 
 if keep_bad_trials == 1
@@ -324,10 +324,10 @@ for i = 1:length(good_move_trials)
     rest_ch_avg_time(i,:) = rest_erp_time(rest_window_start:rest_window_end);
     
 if wl == length(window_length_range) 
-   subplot(2,1,1); hold on;
-   plot(move_ch_avg_time(i,:),smart_move_ch_avg(i,:),'k','LineWidth',2); hold on;   
-   subplot(2,1,2); hold on;
-   plot(rest_ch_avg_time(i,:),smart_rest_ch_avg(i,:),'r','LineWidth',2); hold on;
+%    subplot(2,1,1); hold on;
+%    plot(move_ch_avg_time(i,:),smart_move_ch_avg(i,:),'k','LineWidth',2); hold on;   
+%    subplot(2,1,2); hold on;
+%    plot(rest_ch_avg_time(i,:),smart_rest_ch_avg(i,:),'r','LineWidth',2); hold on;
 end
 
 end
@@ -378,6 +378,8 @@ Smart_Features = [Smart_Features [AUC_move';AUC_rest']];
     end
     Smart_Features = [Smart_Features smart_mahal_dist];
 end    
+
+
 %% Data Visualization
 
 %     figure;
@@ -1166,24 +1168,24 @@ if use_src_classifier == 1
 end
 %% Plot sensitivity & specificity
     if use_svm_classifier == 1
-    figure; 
-    group_names = {'Online Fixed','Fixed_old', 'Online Flexible'};
-    online_fixed = Performance.All_eeg_accur{Performance.conv_opt_wl_ind}(1,:);
-    %online_variable = Performance.All_eeg_accur{Performance.smart_opt_wl_ind}(2,:);
-    online_variable_old = prev_Performance.All_eeg_accur{prev_Performance.conv_opt_wl_ind}(1,:);
-    online_variable = prev_Performance.All_eeg_accur{prev_Performance.smart_opt_wl_ind}(2,:);
-
-    % filename3 = [folder_path Subject_name '_ses' num2str(Sess_num) '_cond' num2str(Cond_num) '_block80_performance_optimized_fixed_smart_offline_nic.mat'];
-    % load(filename3);
-    % offline_fixed = Performance.All_eeg_accur{Performance.conv_opt_wl_ind}(1,:);
-
-
-    h = boxplot([online_fixed' online_variable_old' online_variable'] ,'labels',group_names,'widths',0.5);
-     set(h,'LineWidth',2);
-    v = axis;
-    axis([v(1) v(2) 0 100]);
-    ylabel('Classification Accuracy (%)','FontSize',12);
-    title([Subject_name ', Mode ' num2str(Cond_num)],'FontSize',12);
+% %     figure; 
+% %     group_names = {'Online Fixed','Fixed_old', 'Online Flexible'};
+% %     online_fixed = Performance.All_eeg_accur{Performance.conv_opt_wl_ind}(1,:);
+% %     %online_variable = Performance.All_eeg_accur{Performance.smart_opt_wl_ind}(2,:);
+% %     online_variable_old = prev_Performance.All_eeg_accur{prev_Performance.conv_opt_wl_ind}(1,:);
+% %     online_variable = prev_Performance.All_eeg_accur{prev_Performance.smart_opt_wl_ind}(2,:);
+% % 
+% %     % filename3 = [folder_path Subject_name '_ses' num2str(Sess_num) '_cond' num2str(Cond_num) '_block80_performance_optimized_fixed_smart_offline_nic.mat'];
+% %     % load(filename3);
+% %     % offline_fixed = Performance.All_eeg_accur{Performance.conv_opt_wl_ind}(1,:);
+% % 
+% % 
+% %     h = boxplot([online_fixed' online_variable_old' online_variable'] ,'labels',group_names,'widths',0.5);
+% %      set(h,'LineWidth',2);
+% %     v = axis;
+% %     axis([v(1) v(2) 0 100]);
+% %     ylabel('Classification Accuracy (%)','FontSize',12);
+% %     title([Subject_name ', Mode ' num2str(Cond_num)],'FontSize',12);
 
     %export_fig 'TA_ses1_cond3_smart_conv_comparison' '-png' '-transparent'
 
