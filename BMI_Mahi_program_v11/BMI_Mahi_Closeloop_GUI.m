@@ -23,7 +23,13 @@ function varargout = BMI_Mahi_Closeloop_GUI(varargin)
 % Edit the above text to modify the response to help BMI_Mahi_Closeloop_GUI
 
 % Last Modified by GUIDE v2.5 24-Jul-2015 11:09:50
-
+%% ********************Revisions
+% 4-9-2015 - Stopped saving EMG values in .txt file 
+% 7-24-2015 - Stopped launching flexion_game if use_mahi_exo was selected
+% 8-10-2015 - Added and modified video recording function
+%                     - Added second Serial COM port for triggering video capture in remote device
+% 8-22-2015 - Replaced low pass and high pass filters with a single band pass filter [0.1 - 1 Hz]
+%--------------------------------------------------------------------------------------------------
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
 gui_State = struct('gui_Name',       mfilename, ...
@@ -87,7 +93,12 @@ handles.system.right_impaired = 0;
 
 
 handles.system.serial_interface.serial_object = varargin{2};
-
+if nargin > 2   % Serial port for webcam was detected
+    handles.user.testing_data.serial_vidobj = varargin{3};
+    % COM-port is already open. No need to call fopen().
+else
+    handles.user.testing_data.serial_vidobj = -1;
+end
 
 set(handles.axes_raster_plot,'box','on','nextplot','replacechildren');
 
@@ -95,8 +106,8 @@ handles.reset_eeg_control_timer = timer('TimerFcn', {@reset_eeg_control_timer_Ca
                                      'StartDelay', 0, 'Period',1,'ExecutionMode','fixedRate');
 
 % Start flexion_game gui
-% eval('flexion_game');                     % commented 7-24-15
-% global hflexion_game
+% eval('flexion_game');                     % commented 7-24-2015
+global hflexion_game
 global datahdr marker_block
 
 % Update handles structure
@@ -114,9 +125,12 @@ function figure1_CloseRequestFcn(hObject, eventdata, handles)
 % % Hint: delete(hObject) closes the figure
 % delete(hObject);
 global hflexion_game
-if ishandle(hflexion_game.figure_flexion_game) && strcmp(get(hflexion_game.figure_flexion_game, 'type'), 'figure')
-    % findobj('type','figure','name','mytitle')
-    close(hflexion_game.figure_flexion_game);
+
+if ~isempty(hflexion_game)
+    if ishandle(hflexion_game.figure_flexion_game) && strcmp(get(hflexion_game.figure_flexion_game, 'type'), 'figure')
+        % findobj('type','figure','name','mytitle')
+        close(hflexion_game.figure_flexion_game);
+    end
 end
 
 if isequal(get(hObject, 'waitstatus'), 'waiting')
@@ -151,7 +165,11 @@ varargout{6} = marker_block;
 varargout{7} = all_cloop_prob_threshold;
 varargout{8} = all_cloop_cnts_threshold;
 %varargout{9} = downsample(processed_emg',downsamp_factor)';
-varargout{9} = resample(processed_emg',6,1)';
+if ~isempty(processed_emg)
+    varargout{9} = resample(processed_emg',6,1)';
+else
+    varargout{9} = 0;
+end
 varargout{10} = unprocessed_eeg; % test_change
 
 % The figure can be deleted now
@@ -304,7 +322,7 @@ function pushbutton_start_closeloop_Callback(hObject, eventdata, handles)
     global target_trig_label
     global move_trig_label
     global rest_trig_label
-    global block_start_stop_label
+    global block_start_label block_stop_label
     global eeg_control
     global emg_control_channels
     global hflexion_game
@@ -312,11 +330,11 @@ function pushbutton_start_closeloop_Callback(hObject, eventdata, handles)
     % Load Performance variable from .mat file
     handles.user.calibration_data.folder_path = ['C:\NRI_BMI_Mahi_Project_files\All_Subjects\Subject_' handles.user.calibration_data.subject_initials '\' ...
                                                 handles.user.calibration_data.subject_initials '_Session'...
-                                                num2str(handles.user.calibration_data.sess_num) '\'];   %change10
+                                                num2str(handles.user.calibration_data.sess_num) '\'];   %change15
                                             
     handles.user.testing_data.closeloop_folder_path = ['C:\NRI_BMI_Mahi_Project_files\All_Subjects\Subject_' handles.user.calibration_data.subject_initials '\' ...
                                                 handles.user.calibration_data.subject_initials '_Session'...
-                                                num2str(handles.user.testing_data.closeloop_sess_num) '\'];     %change11
+                                                num2str(handles.user.testing_data.closeloop_sess_num) '\'];     %change16
     
                                             
     handles.user.testing_data.classifier_filename = [handles.user.calibration_data.folder_path...
@@ -340,8 +358,7 @@ function pushbutton_start_closeloop_Callback(hObject, eventdata, handles)
     load(handles.user.testing_data.classifier_filename);
     CloopClassifier = Performance;
     classifier_channels = CloopClassifier.classchannels;
-    %classifier_channels = [1 14 28 53]; %test_change
-    emg_classifier_channels = [42 41 51 17 45 46 55 22]; % [LB1 LB2 LT1 LT2 RB1 RB2 RT1 RT2] % change12
+    emg_classifier_channels = [42 41 51 17 45 46 55 22]; % [LB1 LB2 LT1 LT2 RB1 RB2 RT1 RT2] % change17
         
     if handles.system.left_impaired 
         emg_control_channels = [1 2];
@@ -365,15 +382,16 @@ function pushbutton_start_closeloop_Callback(hObject, eventdata, handles)
     % Classifier parameters
     cloop_prob_threshold = CloopClassifier.opt_prob_threshold;            
     cloop_cnts_threshold  = CloopClassifier.consecutive_cnts_threshold;        % Number of consecutive valid cnts required to accept as 'GO'
-    emg_mvc_threshold = 25;             % change13
+    emg_mvc_threshold = 25;             % change18
     emg_tricep_threshold = 25;
 
     DEFINE_GO = 1;
     DEFINE_NOGO = 2;
-    target_trig_label = 'S  8';                 % change14
+    target_trig_label = 'S  8';                 
     move_trig_label = 'S 16';  % 'S 32'; %'S  8'; %'100';   
     rest_trig_label = 'S  2';  % 'S  2'; %'200';
-    block_start_stop_label = 'S 34'; %'S 10';
+    block_start_label = 'S 10'; %'S 10';        % change19
+    block_stop_label = 'S 26';
     
     % Change for individual recorder host
     recorderip = '127.0.0.1';
@@ -402,10 +420,18 @@ function pushbutton_start_closeloop_Callback(hObject, eventdata, handles)
     set(handles.editbox_triceps_threshold,'String',num2str(emg_tricep_threshold));
     
     if ~handles.system.use_mahi_exo
-        eval('flexion_game');                     % added 7-24-15
-        disp(hflexion_game);
+        eval('flexion_game');                     % added 7-24-2015
+        %disp(hflexion_game);
     else
-        disp(hflexion_game);
+        %disp(hflexion_game);
+    end
+    
+    % Adding video capture  - 8/10/2015
+    % [handles.user.testing_data.vidobj,handles.user.testing_data.capture_fig] = start_video_capture(handles);  % commented 8-11-2015
+    if handles.user.testing_data.serial_vidobj ~= -1
+        video_filename = [handles.user.calibration_data.subject_initials '_ses' num2str(handles.user.testing_data.closeloop_sess_num)...
+                                          '_block' num2str(handles.user.testing_data.closeloop_block_num) '_closeloop_video'];
+        fprintf(handles.user.testing_data.serial_vidobj,'%s\n',['Start ' video_filename]);       % send start message and filename to remote webcam, SPACE after Start is required
     end
     
     guidata(hObject,handles);
@@ -424,6 +450,22 @@ function pushbutton_stop_closeloop_Callback(hObject, eventdata, handles)
     % Display a message
     disp('connection closed');
     
+    if get(handles.checkbox_auto_save_data,'Value')
+        save_cloop_data(handles);
+    end
+       % commented 4-9-15
+       %fclose(handles.user.testing_data.emg_decisions_fileID);
+       
+     % Adding video capture  
+    if handles.user.testing_data.serial_vidobj ~= -1
+        % stop_video_capture(handles); % commented 8-11-2015
+        fprintf(handles.user.testing_data.serial_vidobj,'%s\n','Stop ');       % send stop message to remote webcam, SPACE after Stop is required
+    else
+        warndlg('Video was not recorded');
+    end
+    % close(handles.user.testing_data.capture_fig);     % commented 8-11-2015
+          
+       
     %% Raster plot for close loop 
 try       
                     Proc_EEG = processed_eeg; 
@@ -533,15 +575,10 @@ catch raster_err
         cla(handles.axes_raster_plot,'reset')    
         axes_xlim = get(handles.axes_raster_plot,'XLim');
         axes_ylim = get(handles.axes_raster_plot,'YLim');
+        axes(handles.axes_raster_plot);
         text(axes_xlim(1) + 0.2, axes_ylim(2)/2,'Error: Insufficient data to create plot','FontSize',12,'Color','r');
         text(axes_xlim(1) + 0.2, axes_ylim(2)/2-0.2, raster_err.message,'Color','r');
 end
-
-    if get(handles.checkbox_auto_save_data,'Value')
-        save_cloop_data(handles);
-    end
-       % commented 4-9-15
-       %fclose(handles.user.testing_data.emg_decisions_fileID);
     
     guidata(hObject,handles);
 
@@ -574,7 +611,7 @@ function EEGTimer_Callback(timer_object,eventdata,hObject)
     global target_trig_label
     global move_trig_label
     global rest_trig_label
-    global block_start_stop_label
+    global block_start_label block_stop_label
     global hflexion_game
     global datahdr
     global eeg_control
@@ -586,20 +623,22 @@ function EEGTimer_Callback(timer_object,eventdata,hObject)
     global props;           % EEG Properties
     global dataX00ms dataEMGms         % EEG data of the last recorded second
     global total_chnns
-    global downsamp_factor pkt_size emg_pkt_size filt_order
-    global new_pkt hp_filt_pkt lp_filt_pkt spatial_filt_pkt emg_bp_filt_pkt
-    %global prev_pkt prev_spatial_filt_pkt  
-    global hpf_df2sos lpf_df2sos emg_bpf_df2sos prev_lp_filt_pkt_3D prev_hp_filt_pkt_3D prev_emg_bp_filt_pkt_3D
+    global downsamp_factor pkt_size emg_pkt_size 
+    global new_pkt eeg_bp_filt_pkt spatial_filt_pkt emg_bp_filt_pkt
+    global eeg_bpf_df2sos emg_bpf_df2sos prev_eeg_bp_filt_pkt_3D prev_emg_bp_filt_pkt_3D
     global emg_new_pkt emg_diff_pkt emg_rms_pkt
-    %global emg_prev_pkt prev_emg_abs_diff_pkt prev_emg_mvc_pkt prev_emg_diff_pkt emg_abs_diff_pkt emg_mvc_pkt
     global firstblock marker_block marker_type
     global processed_eeg processed_emg Overall_spatial_chan_avg all_feature_vectors GO_Probabilities
     global valid_move_cnt move_counts feature_matrix sliding_window start_prediction kcount
     global all_cloop_prob_threshold all_cloop_cnts_threshold
     global required_chnns L_LAP M_CAR
-    % ----- unused variables
-    global unprocessed_eeg % test_change
+    
+    % ----- unused variables - 8/22/2015
+    global unprocessed_eeg 
+    global filt_order hp_filt_pkt lp_filt_pkt hpf_df2sos lpf_df2sos prev_lp_filt_pkt_3D prev_hp_filt_pkt_3D % Parameters for low pass and high pass EEG filters - removed 8/22/2015
+    %global prev_pkt prev_spatial_filt_pkt
     %global  prev_hp_filt_pkt  prev_lp_filt_pkt prev_emg_bp_filt_pkt
+    %global emg_prev_pkt prev_emg_abs_diff_pkt prev_emg_mvc_pkt prev_emg_diff_pkt emg_abs_diff_pkt emg_mvc_pkt
     
             %% ------------------ Main reading loop ----------------------------------------
         header_size = 24;
@@ -615,7 +654,7 @@ function EEGTimer_Callback(timer_object,eventdata,hObject)
                     switch hdr.type
                         case 1       
                 %% Initialize, Setup information like EEG properties
-                            disp('Start');
+                            disp('Start data streaming...');
                             % Read and display EEG properties
                             props = ReadStartMessage(con, hdr);
                             disp(props);
@@ -638,7 +677,9 @@ function EEGTimer_Callback(timer_object,eventdata,hObject)
                             prev_hp_filt_pkt_3D = zeros(2,2,total_chnns);                                                                                                              
                             lp_filt_pkt = zeros(length(classifier_channels),pkt_size);      % Use only classifier channels
                             %prev_lp_filt_pkt = zeros(length(classifier_channels),pkt_size);     
-                            prev_lp_filt_pkt_3D = zeros(2,2,length(classifier_channels));     
+                            prev_lp_filt_pkt_3D = zeros(2,2,length(classifier_channels)); 
+                            eeg_bp_filt_pkt = zeros(total_chnns,pkt_size);
+                            prev_eeg_bp_filt_pkt_3D = zeros(2,2,total_chnns);     
                             spatial_filt_pkt = zeros(total_chnns,pkt_size);
                             %prev_spatial_filt_pkt = zeros(total_chnns,pkt_size);
                             
@@ -653,6 +694,12 @@ function EEGTimer_Callback(timer_object,eventdata,hObject)
                             SOS_lpf = tf2sos(b_lpf,a_lpf);
                             lpf_df2sos = dfilt.df2sos(SOS_lpf);
                             lpf_df2sos.PersistentMemory = true;
+                            
+                            % Create EEG 0.1 - 1 Hz band pass filter dfilt object 
+                            [eeg_b_bpf,eeg_a_bpf] = butter(2,([0.1 1]./(orig_Fs/2)),'bandpass');
+                            eeg_SOS_bpf = tf2sos(eeg_b_bpf,eeg_a_bpf);
+                            eeg_bpf_df2sos = dfilt.df2sos(eeg_SOS_bpf);
+                            eeg_bpf_df2sos.PersistentMemory = true;
                             
                             % Create EMG band-pass filter (30 - 200 Hz) dfilt object
                             [emg_b_bpf,emg_a_bpf] = butter(2,([30 200]./(orig_Fs/2)),'bandpass');
@@ -804,15 +851,14 @@ function EEGTimer_Callback(timer_object,eventdata,hObject)
                             if datahdr.markerCount > 0                            
                                 for m = 1:datahdr.markerCount
                                     %disp(markers(m));
-                                    if (strcmp(markers(m).description,move_trig_label))         % Movement onset
-                                        
+                                    if (strcmp(markers(m).description,move_trig_label))         % Movement onset                                        
                                         marker_block = [marker_block; [markers(m).sample_num,100]];
                                         %kcount = kcount + 1;
                                     elseif (strcmp(markers(m).description,rest_trig_label))     % Targets appear
                                        % baseline = feature_data;  
                                        % new_baseline = true;
                                        %marker_block = [marker_block; [markers(m).sample_num,200]];
-                                    elseif ((strcmp(markers(m).description,block_start_stop_label))  || (strcmp(markers(m).description,'S 26')))  % Start/Stop Prediction
+                                    elseif ((strcmp(markers(m).description,block_start_label))  || (strcmp(markers(m).description,block_stop_label)))  % Start/Stop Prediction
                                        start_prediction = ~start_prediction; 
                                        marker_block = [marker_block; [markers(m).sample_num,50]];
                                        if start_prediction == true
@@ -886,39 +932,47 @@ function EEGTimer_Callback(timer_object,eventdata,hObject)
                                new_pkt = dataX00ms(:,1:pkt_size);                      % Select 64xN size of data packet i.e 2*N msec
                                dataX00ms = dataX00ms(:,pkt_size+1 : dims(2));          % Move all excess data to next data packet        
                               
-                               % High pass filter 0.1 Hz
-                               for no_chns = 1:length(required_chnns)
-%                                    hp_filt_pkt(required_chnns(no_chns),:) = pkt_hp_filter(new_pkt(required_chnns(no_chns),:),...
-%                                        prev_pkt(required_chnns(no_chns),(pkt_size - filt_order)+1:pkt_size),...
-%                                        prev_hp_filt_pkt(required_chnns(no_chns),(pkt_size - filt_order)+1:pkt_size),...
-%                                        orig_Fs);
-                                   
-                                   % High pass filter using dfilt()
-                                   hpf_df2sos.States = prev_hp_filt_pkt_3D(:,:,required_chnns(no_chns));
-                                   hp_filt_pkt(required_chnns(no_chns),:) = filter(hpf_df2sos,new_pkt(required_chnns(no_chns),:));
-                                   prev_hp_filt_pkt_3D(:,:,required_chnns(no_chns)) = hpf_df2sos.States;
-                               end                            
+                               % High pass filter 0.1 Hz - commented 8/22/2015
+%                                for no_chns = 1:length(required_chnns)
+% %                                    hp_filt_pkt(required_chnns(no_chns),:) = pkt_hp_filter(new_pkt(required_chnns(no_chns),:),...
+% %                                        prev_pkt(required_chnns(no_chns),(pkt_size - filt_order)+1:pkt_size),...
+% %                                        prev_hp_filt_pkt(required_chnns(no_chns),(pkt_size - filt_order)+1:pkt_size),...
+% %                                        orig_Fs);
+%                                    
+%                                    % High pass filter using dfilt()
+%                                    hpf_df2sos.States = prev_hp_filt_pkt_3D(:,:,required_chnns(no_chns));
+%                                    hp_filt_pkt(required_chnns(no_chns),:) = filter(hpf_df2sos,new_pkt(required_chnns(no_chns),:));
+%                                    prev_hp_filt_pkt_3D(:,:,required_chnns(no_chns)) = hpf_df2sos.States;
+%                                end                            
+                               
+                               % Band pass filter 0.1-1 Hz, 8/22/2015
+                               for no_chns = 1:length(required_chnns)                                 
+                                   eeg_bpf_df2sos.States = prev_eeg_bp_filt_pkt_3D(:,:,required_chnns(no_chns));
+                                   eeg_bp_filt_pkt(required_chnns(no_chns),:) = filter(eeg_bpf_df2sos,new_pkt(required_chnns(no_chns),:));
+                                   prev_eeg_bp_filt_pkt_3D(:,:,required_chnns(no_chns)) = eeg_bpf_df2sos.States;
+                               end             
                                
                                % Re-reference the data                                                     
                                %spatial_filt_pkt = M_CAR*hp_filt_pkt;      % Common Average referencing  
-                               spatial_filt_pkt = L_LAP*hp_filt_pkt;          % Large Laplacian filtering                             
-                               
-                               % Low pass filter 1 Hz,
-                               % prev_spatial_filt_pkt
-                               for no_chns = 1:length(classifier_channels)                                
-%                                    lp_filt_pkt(no_chns,:) = pkt_lp_filter(spatial_filt_pkt(classifier_channels(no_chns),:),...
-%                                        prev_spatial_filt_pkt(classifier_channels(no_chns),(pkt_size - filt_order)+1:pkt_size),...
-%                                        prev_lp_filt_pkt(no_chns,(pkt_size - filt_order)+1:pkt_size),...
-%                                        orig_Fs);
-                                        % Low pass filter using dfilt()
-                                        lpf_df2sos.States = prev_lp_filt_pkt_3D(:,:,no_chns);
-                                        lp_filt_pkt(no_chns,:) = filter(lpf_df2sos,spatial_filt_pkt(classifier_channels(no_chns),:));
-                                        prev_lp_filt_pkt_3D(:,:,no_chns) = lpf_df2sos.States;
-                               end
+                               % spatial_filt_pkt = L_LAP*hp_filt_pkt;        % Large Laplacian filtering % commented 8/22/2015
+                               spatial_filt_pkt = L_LAP*eeg_bp_filt_pkt;
+                                                              
+                               % Low pass filter 1 Hz, prev_spatial_filt_pkt; commented 8/22/2015
+%                                for no_chns = 1:length(classifier_channels)                                
+% %                                    lp_filt_pkt(no_chns,:) = pkt_lp_filter(spatial_filt_pkt(classifier_channels(no_chns),:),...
+% %                                        prev_spatial_filt_pkt(classifier_channels(no_chns),(pkt_size - filt_order)+1:pkt_size),...
+% %                                        prev_lp_filt_pkt(no_chns,(pkt_size - filt_order)+1:pkt_size),...
+% %                                        orig_Fs);
+%                                         % Low pass filter using dfilt()
+%                                         lpf_df2sos.States = prev_lp_filt_pkt_3D(:,:,no_chns);
+%                                         lp_filt_pkt(no_chns,:) = filter(lpf_df2sos,spatial_filt_pkt(classifier_channels(no_chns),:));
+%                                         prev_lp_filt_pkt_3D(:,:,no_chns) = lpf_df2sos.States;
+%                                end
 
                                % Downsample data to 20 Hz
                                %Filtered_EEG_Downsamp = downsample(lp_filt_pkt',downsamp_factor)' - repmat(mean(baseline,2),1,window_size);
-                               Filtered_EEG_Downsamp = downsample(lp_filt_pkt',downsamp_factor)';        % No baseline correction
+                               % Filtered_EEG_Downsamp = downsample(lp_filt_pkt',downsamp_factor)';        % No baseline correction - commented 8/22/2015
+                               Filtered_EEG_Downsamp = downsample(spatial_filt_pkt(classifier_channels,:)',downsamp_factor)';
                                
                                % 1. Compute spatial channel average (mean filtering)
                                spatial_chan_avg = mean(Filtered_EEG_Downsamp,1);                       
@@ -963,33 +1017,31 @@ function EEGTimer_Callback(timer_object,eventdata,hObject)
                 %                                              pause(0.05);
                 %                                              ard.digitalWrite(32,0);
                 %                                              
-                            if handles.system.use_eeg == 1
-                                            if handles.system.serial_interface.enable_serial
-                                                fwrite(handles.system.serial_interface.serial_object,[7]);                
-                                            elseif strcmp(get(hflexion_game.hball,'Visible'),'on') && strcmp(get(hflexion_game.move_ball_timer,'Running'),'off')
-                                                start(hflexion_game.move_ball_timer);
-                                            else
-                                                %ignore
-                                            end                                                  
-                                            disp('--->EEG GO');
-                                            marker_block = [marker_block; [datahdr.block*datahdr.points,300]];      % Not completely accurate
-                            end
-                            
-                            if handles.system.use_eeg_emg == 1
-                                eeg_control = 1;
-                                % Start timer for resetting eeg_control, if
-                                % it is already not running ~ Important
-                                if strcmp(get(handles.reset_eeg_control_timer,'Running'),'off')
-                                    start(handles.reset_eeg_control_timer);
-                                end
-                                disp('--->EEG GO');
-                                marker_block = [marker_block; [datahdr.block*datahdr.points,300]];      % Not completely accurate
-                            end
+                                            if handles.system.use_eeg == 1      % If using EEG control only, then do not check EMG
+                                                            if handles.system.serial_interface.enable_serial
+                                                                fwrite(handles.system.serial_interface.serial_object,[7]);                
+                                                            elseif strcmp(get(hflexion_game.hball,'Visible'),'on') && strcmp(get(hflexion_game.move_ball_timer,'Running'),'off')
+                                                                start(hflexion_game.move_ball_timer);
+                                                            else
+                                                                %ignore
+                                                            end                                                  
+                                                            disp('--->EEG GO');
+                                                            marker_block = [marker_block; [datahdr.block*datahdr.points,300]];      % Not completely accurate
+                                            end
 
-                %                                             disp('Do you think that it was you that made the cursor move?');
-                %                                             likert_score = [ likert_score; input('Enter Score: ')];      
+                                            if handles.system.use_eeg_emg == 1 % If using both EEG and EMG control, then check if EMG activity is present
+                                                eeg_control = 1;
+                                                % Start timer for resetting eeg_control, if
+                                                % it is already not running ~ Important
+                                                if strcmp(get(handles.reset_eeg_control_timer,'Running'),'off')
+                                                    start(handles.reset_eeg_control_timer);
+                                                end
+                                                disp('--->EEG GO');
+                                                marker_block = [marker_block; [datahdr.block*datahdr.points,300]];      % Not completely accurate
+                                                fwrite(handles.system.serial_interface.serial_object,[5]);                              % To generate trigger pulse from Exoskeleton to EEG system == 'S 64'   
+                                            end
 
-                                        end % endif
+                                       end % endif
                                        %move_command = [move_command; 1];
                                        %rest_command = [rest_command; 0];
                                  else
@@ -1003,11 +1055,11 @@ function EEGTimer_Callback(timer_object,eventdata,hObject)
                                            fprintf('\n');
                                        end
                                  end % endif
-        %                                raster_signal = [raster_signal; [Decision_slid_win, valid_move_cnt]];
-                                        move_counts = [move_counts valid_move_cnt];
-                                        if  valid_move_cnt >= cloop_cnts_threshold;
-                                             valid_move_cnt = 0;
-                                        end
+        
+                                move_counts = [move_counts valid_move_cnt];
+                                if  valid_move_cnt >= cloop_cnts_threshold;
+                                     valid_move_cnt = 0;
+                                end
 
                                end % end for sl_index = 1:window_length
 
@@ -1021,42 +1073,38 @@ function EEGTimer_Callback(timer_object,eventdata,hObject)
 %                                 prev_emg_abs_diff_pkt = emg_abs_diff_pkt;
 %                                 prev_emg_mvc_pkt = emg_mvc_pkt;
                                 
-                                unprocessed_eeg = [unprocessed_eeg emg_new_pkt];
+                                unprocessed_eeg = [unprocessed_eeg new_pkt];  
                                 processed_eeg   = [processed_eeg Filtered_EEG_Downsamp];
-                                %processed_eeg   = [processed_eeg emg_bp_filt_pkt]; % test_change
-
+                                % unprocessed_eeg   = [unprocessed_eeg eeg_bp_filt_pkt]; % test_change 8/22/2015
                                 Overall_spatial_chan_avg = [Overall_spatial_chan_avg spatial_chan_avg];
-        %                         lpf_eeg = [lpf_eeg lp_filt_pkt];
-
                             end   % end if dims_pkt > pkt_size
 
-                                if handles.system.use_emg == 1
-                                   eeg_control = 1;  % change14
-                                end
+                            if handles.system.use_emg == 1 % If using EMG control only, then set eeg_control = 1
+                               eeg_control = 1; 
+                            end
                                 
-                                if eeg_control == 1
-                                        %if (max(emg_mvc_pkt(1,:)) >= emg_mvc_threshold) || (max(emg_mvc_pkt(2,:)) >= 7.2)            % 1 - Biceps, 2 - Triceps, emg_mvc_threshold   - change
-                                        if ((emg_rms_pkt(emg_control_channels(1)) >= emg_mvc_threshold) || (emg_rms_pkt(emg_control_channels(2)) >= emg_tricep_threshold))            
-                                                if handles.system.serial_interface.enable_serial
-                                                        fwrite(handles.system.serial_interface.serial_object,[7]);                 % commented 4-9-15
-                                                elseif strcmp(get(hflexion_game.hball,'Visible'),'on') && strcmp(get(hflexion_game.move_ball_timer,'Running'),'off')
-                                                        start(hflexion_game.move_ball_timer);
-                                                else
-                                                    %ignore
-                                                end          
-                                                 % commented 4-9-15
-                                                %fprintf(handles.user.testing_data.emg_decisions_fileID,'%6.3f \t %6.3f \t 1 \t %d \n',...
-                                                 %   emg_rms_pkt(1), emg_rms_pkt(2), strcmp(get(handles.reset_eeg_control_timer,'Running'),'on')); 
-                                                disp('--->EEG+EMG GO');
-                                                marker_block = [marker_block; [datahdr.block*datahdr.points,400]];
-                                                eeg_control = 0;
-                                       else
-                                           disp('.');
-                                            % commented 4-9-15
-                                            %fprintf(handles.user.testing_data.emg_decisions_fileID,'%6.3f \t %6.3f \t %6.3f \t %6.3f \t 0 \t %d \n',...
-                                            %  emg_rms_pkt(1), emg_rms_pkt(2), emg_mvc_threshold, emg_tricep_threshold, strcmp(get(handles.reset_eeg_control_timer,'Running'),'on')); 
-                                        end
-                                end
+                            if eeg_control == 1                                 
+                                    if ((emg_rms_pkt(emg_control_channels(1)) >= emg_mvc_threshold) || (emg_rms_pkt(emg_control_channels(2)) >= emg_tricep_threshold))            
+                                            if handles.system.serial_interface.enable_serial
+                                                    fwrite(handles.system.serial_interface.serial_object,[7]);                 
+                                            elseif strcmp(get(hflexion_game.hball,'Visible'),'on') && strcmp(get(hflexion_game.move_ball_timer,'Running'),'off')
+                                                    start(hflexion_game.move_ball_timer);
+                                            else
+                                                %ignore
+                                            end          
+                                             % commented 4-9-15
+                                            %fprintf(handles.user.testing_data.emg_decisions_fileID,'%6.3f \t %6.3f \t 1 \t %d \n',...
+                                             %   emg_rms_pkt(1), emg_rms_pkt(2), strcmp(get(handles.reset_eeg_control_timer,'Running'),'on')); 
+                                            disp('--->EEG+EMG GO');
+                                            marker_block = [marker_block; [datahdr.block*datahdr.points,400]];
+                                            eeg_control = 0;
+                                   else
+                                       disp('.');
+                                        % commented 4-9-15
+                                        %fprintf(handles.user.testing_data.emg_decisions_fileID,'%6.3f \t %6.3f \t %6.3f \t %6.3f \t 0 \t %d \n',...
+                                        %  emg_rms_pkt(1), emg_rms_pkt(2), emg_mvc_threshold, emg_tricep_threshold, strcmp(get(handles.reset_eeg_control_timer,'Running'),'on')); 
+                                    end
+                            end
                                 
                         case 3       
                 %% Stop message   
@@ -1325,6 +1373,100 @@ var_filename = [handles.user.testing_data.closeloop_folder_path handles.user.cal
 save(var_filename,'classifier_filename','processed_eeg','processed_emg', 'Overall_spatial_chan_avg','all_feature_vectors','GO_Probabilities',...
     'move_counts','marker_block','all_cloop_prob_threshold','all_cloop_cnts_threshold');
 
+function [vidobj, capture_fig] = start_video_capture(handles) % Unused function 8-11-2015
+    % Create a figure window. This example turns off the default
+    % toolbar, menubar, and figure numbering.
+    capture_fig = figure('Toolbar','none', 'Menubar', 'none', 'NumberTitle','Off', 'Name','Video Capture Window','Position',[900 1100 400 300]);
+    % Create the text label for the timestamp
+    % hTextLabel = uicontrol('style','text','String','Timestamp', 'Units','normalized', 'Position',[0.85 -.04 .15 .08]);
+    vidobj = -1;
+    
+    try
+        vidobj = videoinput('winvideo', 1,'RGB24_800x600');
+       
+        % Adjusting brightness and exposure
+        % https://makarandtapaswi.wordpress.com/2009/07/09/webcam-capture-in-matlab/#comments
+        % Additional Link: http://www.mathworks.com/help/supportpkg/usbwebcams/ug/set-properties-for-webcam-acquisition.html
+        % src = getselectedsource(vid); % get properties of video object
+        % get(src) % gets the list of properties, also inspect(src)
+        % propinfo(src, 'Brightness') % returns the range of acceptable values
+        % set(src, 'Exposure', 1); % set specific properties
+
+        video_filename = [handles.user.testing_data.closeloop_folder_path handles.user.calibration_data.subject_initials...
+                '_ses' num2str(handles.user.testing_data.closeloop_sess_num) '_block' num2str(handles.user.testing_data.closeloop_block_num)...
+                '_video.avi']; % create filename string
+        aviobj = VideoWriter(video_filename);  % Create a |VideoWriter| object.
+        aviobj.Quality = 50; 
+        aviobj.FrameRate = 30;             % Defaukt source frame rate = 30
+
+        vidobj.DiskLogger = aviobj; 
+        vidobj.LoggingMode = 'disk';
+        vidobj.TriggerRepeat = Inf;            %  If the FramesPerTrigger property is set to Inf, the object ignores the value of the TriggerRepeat property.
+        vidobj.FramesPerTrigger = Inf;     % Record all frames
+        %vidobj.FrameGrabInterval = 20;    % Default = 1. Grab one frame in every X frames. Higher the value less data gets logged
+        
+        vidRes = vidobj.VideoResolution;
+        imWidth = vidRes(1);
+        imHeight = vidRes(2);
+        nBands = vidobj.NumberOfBands;
+        hImage = image( zeros(imHeight, imWidth, nBands) );
+        
+        % Specify the size of the axes that contains the image object so that it displays the image at the right resolution and
+        % centers it in the figure window.
+        figSize = get(capture_fig,'Position');
+        figWidth = figSize(3);
+        figHeight = figSize(4);
+        gca.unit = 'pixels';
+        gca.position = [ ((figWidth - imWidth)/2) ((figHeight - imHeight)/2) imWidth imHeight ];
+        
+        % Set up the update preview window function.
+        % setappdata(hImage,'UpdatePreviewWindowFcn',@mypreview_fcn);
+
+        % Make handle to text label available to update function.
+        % setappdata(hImage,'HandleToTimestampLabel',hTextLabel);
+
+        % Display the video data in your GUI.
+        preview(vidobj, hImage);
+        start(vidobj);
+        tic 
+        % stop(vidobj);
+        % stoppreview(vidobj);
+        
+    catch capture_err
+        figure(capture_fig);
+        axes;
+        text(0.1, 1/2,capture_err.message,'FontSize',12,'Color','r');
+        % delete(vidobj)
+    end        
+    
+function stop_video_capture(handles)    % Unused function 8-11-2015
+    stop(handles.user.testing_data.vidobj);
+    stoppreview(handles.user.testing_data.vidobj);
+    
+    % When logging large amounts of data to disk, disk writing occasionally lags behind the acquisition. To determine whether all frames are written to disk, you can optionally use the DiskLoggerFrameCount property.
+    while (handles.user.testing_data.vidobj.FramesAcquired ~= handles.user.testing_data.vidobj.DiskLoggerFrameCount) 
+        pause(.1)
+    end
+    % You can verify that the FramesAcquired and DiskLoggerFrameCount properties have identical values by using these commands and comparing the output.
+    % vidobj.FramesAcquired
+    % vidobj.DiskLoggerFrameCount
+%     time_elapsed = toc
+    delete(handles.user.testing_data.vidobj);
+    
+% function mypreview_fcn(obj,event,himage)
+% % Example update preview window function.
+% 
+% % Get timestamp for frame.
+% tstampstr = event.Timestamp;
+% 
+% % Get handle to text label uicontrol.
+% ht = getappdata(himage,'HandleToTimestampLabel');
+% 
+% % Set the value of the text label.
+% ht.String = tstampstr;
+% 
+% % Display image data.
+% himage.CData = event.Data
 
 function checkbox_use_eeg_Callback(hObject, eventdata, handles)
 handles.system.use_eeg = get(hObject,'Value');
@@ -1346,8 +1488,6 @@ function checkbox_use_mahi_exo_Callback(hObject, eventdata, handles)
      global eeg_control
      eeg_control = 0;
 %      guidata(handles,hObject);
- 
-
 
 % --- Executes on button press in checkbox_left_hand_impaired.
 function checkbox_left_hand_impaired_Callback(hObject, eventdata, handles)

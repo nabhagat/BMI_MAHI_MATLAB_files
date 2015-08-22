@@ -57,7 +57,7 @@ Channels_nos = [43, 9, 32, 10, 44, 13, 48, 14, 49, 15, 52, 19, ...
 Subject_name = 'BNBO'; % change1
 Sess_num = '2';               
 closeloop_Sess_num = '7';     
-Cond_num = 1;  % 1 - Active; 2 - Passive; 3 - Triggered; 4 - Observation 
+Cond_num = 3;  % 1 - Active; 2 - Passive; 3 - Triggered; 4 - Observation 
 Block_num = 160;
 
 folder_path = ['C:\NRI_BMI_Mahi_Project_files\All_Subjects\Subject_' Subject_name '\' Subject_name '_Session' num2str(Sess_num) '\']; % change2
@@ -78,7 +78,7 @@ if train_classifier == 1
     % Used during extracting epochs for removing corrupted epochs. The numbers of corrupted epochs 
     % must be known in advance. Otherwise declare remove_corrupted_epochs = [];
     
-    remove_corrupted_epochs = [];
+    remove_corrupted_epochs = []; %change5
     %remove_corrupted_epochs = [ remove_corrupted_epochs 41 125 153]; %ERWS_ses2_cond3_block160
 
     %remove_corrupted_epochs = [ remove_corrupted_epochs 21 42 111 112 140 147]; %PLSH_ses2_cond1_block160
@@ -109,16 +109,15 @@ if train_classifier == 1
     %remove_corrupted_epochs = [21 22 50 60]; %MR_ses1_cond3
     %remove_corrupted_epochs = [49 50 61]; %MR_ses1_cond4
     
-    manipulate_epochs = 0;
-    plot_ERPs = 0;
+    manipulate_epochs = 1;
+    plot_ERPs = 1;
     label_events = 0;       % process kinematics and label the events/triggers
     use_kinematics_old_code = 0;    % Use old code for InMotion
     kin_blocks = [1 2 3 4;                % Session 1
                              1 2 3 4];              % Session 2
      % kin_blocks must have 4 columns. If a block is absent, replace it with 0. But don't replace zero for first and last block.   
     
-    use_phase_rand = 0;     % For empirically estimating chance levels. Currently not used
-   %standardize_data_flag = 0;     % Not used
+     %standardize_data_flag = 0;     % Not used
     include_target_events = 0;      % Not used
        
     [ALLEEG EEG CURRENTSET ALLCOM] = eeglab; % start EEGLAB from Matlab 
@@ -133,8 +132,7 @@ elseif test_classifier == 1
     label_events = 0;       % process kinematics and label the events/triggers
     use_kinematics_old_code = 0;    % Use old code for InMotion
     extract_emg_epochs = 0;
-    use_phase_rand = 0;
-   %standardize_data_flag = 0;
+    %standardize_data_flag = 0;
     include_target_events = 0;      
 end
 % Pre-processing Flags
@@ -162,9 +160,9 @@ end
 %2. Filter cutoff frequency  
 hpfc = 0.1;     % HPF Cutoff frequency = 0.1 Hz    
 lpfc = 1;      % LPF Cutoff frequency = 1 Hz
-use_noncausal_filter = 0; % 1 - yes, use zero-phase filtfilt(); 0 - No, use filter()            %change5
+use_noncausal_filter = 0; % 1 - yes, use zero-phase filtfilt(); 0 - No, use filter()            %change6
 use_fir_filter = 0; % always 0
-use_band_pass = 0; %change6
+use_band_pass = 1; %change7
 
 %3. Extracting epochs
 move_trig_label = 'S 16';  % 'S 32'; %'S  8'; %'100';
@@ -726,7 +724,7 @@ if label_events == 1
                     continue;
                 else
                     %Redefine folder path
-                    folder_path = ['C:\NRI_BMI_Mahi_Project_files\All_Subjects\Subject_' Subject_name '\' Subject_name '_Session' num2str(Sess_num) '\']; % change7
+                    folder_path = ['C:\NRI_BMI_Mahi_Project_files\All_Subjects\Subject_' Subject_name '\' Subject_name '_Session' num2str(Sess_num) '\']; % change8
                     %kinematics_raw = importdata([Subject_name '_kinematics.mat']); % Raw data sampled at 200 Hz
                     kinematics_raw = dlmread([folder_path Subject_name '_ses' num2str(Sess_num) '_cond' num2str(Cond_num)...
                     '_block' num2str(kin_block_num) '_kinematics.txt'],'\t',14,1); % Raw data sampled at 200 Hz
@@ -1532,6 +1530,15 @@ if plot_ERPs == 1
     hold on;
     plot_ind4 = 1; % Index of plot where axis should appear
     
+    % Added 8/21/2015
+    find_peak_interval = [-2.5 0.5];
+    mt1 = find(move_erp_time == find_peak_interval(1),1);
+    mt2 = find(move_erp_time == find_peak_interval(2),1);
+    interval = 1; % in seconds for calculating rebound rate
+    rebound_rate = zeros(1,length(Channels_nos));
+    Channels_criteria1 = [];
+    Channels_criteria1_and_2 = [];
+    
     for ind4 = 1:length(Channels_nos)
         axes(T_plot(ind4));
 %         if plot_ind4 == 5                 % Commented by Nikunj on Oct 31,2013
@@ -1542,9 +1549,27 @@ if plot_ERPs == 1
         plot(move_erp_time,move_avg_channels(Channels_nos(ind4),:),'k','LineWidth',1.5);
         plot(move_erp_time,move_avg_channels(Channels_nos(ind4),:)+ (move_SE_channels(Channels_nos(ind4),:)),'-','Color',[0 0 0],'LineWidth',0.5);
         plot(move_erp_time,move_avg_channels(Channels_nos(ind4),:) - (move_SE_channels(Channels_nos(ind4),:)),'-','Color',[0 0 0],'LineWidth',0.5);
-%         plot(rest_erp_time,rest_avg_channels(Channels_nos(ind4),:),'r','LineWidth',2);
-%         plot(rest_erp_time,rest_avg_channels(Channels_nos(ind4),:)+ (rest_SE_channels(Channels_nos(ind4),:)),'-','Color',[1 0 0],'LineWidth',0.5);
-%         plot(rest_erp_time,rest_avg_channels(Channels_nos(ind4),:) - (rest_SE_channels(Channels_nos(ind4),:)),'-','Color',[1 0 0],'LineWidth',0.5);
+        
+        % Added 8/21/2015
+        [min_val,min_ind] = min(move_avg_channels(Channels_nos(ind4),mt1:mt2)); % Find negavtive peak of grand average MRCP
+        rebound_rate(ind4) = (move_avg_channels(Channels_nos(ind4),mt1+min_ind(1)+interval*Fs_eeg) - min_val)/interval;
+                
+        % Criteria 1. Check whether negative peak is significantly not equal to 0
+        % This is equivalent to checking if the 95% C.I. at negative peak contains 0 
+        % if (move_avg_channels(Channels_nos(ind4),mt1+min_ind(1)) + (move_SE_channels(Channels_nos(ind4),mt1+min_ind(1))) < 0) 
+        % Modified Criteria 1. Check whether negative peak is significantly less than 0
+        if ttest(move_epochs_with_base_correct(:,mt1+min_ind(1),Channels_nos(ind4)),0,'tail','left')
+            plot(0.75,-5,'*b','MarkerSize',10);
+            Channels_criteria1 = [Channels_criteria1 Channels_nos(ind4)];
+            if rebound_rate(ind4) >= 2.5 % Threshold
+                Channels_criteria1_and_2 = [Channels_criteria1_and_2 Channels_nos(ind4)];
+                plot(move_erp_time,move_avg_channels(Channels_nos(ind4),:),'r','LineWidth',1.5);
+            end
+        end
+            
+        plot(rest_erp_time,rest_avg_channels(Channels_nos(ind4),:),'g','LineWidth',2);
+        plot(rest_erp_time,rest_avg_channels(Channels_nos(ind4),:)+ (rest_SE_channels(Channels_nos(ind4),:)),'-','Color',[0 1 0],'LineWidth',0.5);
+        plot(rest_erp_time,rest_avg_channels(Channels_nos(ind4),:) - (rest_SE_channels(Channels_nos(ind4),:)),'-','Color',[0 1 0],'LineWidth',0.5);
 %         
 %         jbfill(move_erp_time,move_avg_channels(Channels_nos(ind4),:)+ (move_SE_channels(Channels_nos(ind4),:)),...
 %            move_avg_channels(Channels_nos(ind4),:)- (move_SE_channels(Channels_nos(ind4),:)),[1 1 1],'k',0,0.3);
@@ -1897,16 +1922,30 @@ end
 %% Close-loop BCI testing in realtime.
 if test_classifier == 1
    
-   % if ~isempty(instrfind)
-        % set and open serial port
-        %obj = serial('com1','baudrate',115200,'parity','none','databits',8,'stopbits',1);   %InMotion
-        obj = serial('com3','baudrate',19200,'parity','none','databits',8,'stopbits',1); %Mahi               % change8
+    % [~,res]=system('mode');
+    % ports=regexp(res,'COM\d+','match')';
+    % --OR--- instrhwinfo('serial')
+    
+    % set and open serial port
+    %obj = serial('com1','baudrate',115200,'parity','none','databits',8,'stopbits',1);   %  InMotion
+    obj = serial('COM3','baudrate',19200,'parity','none','databits',8,'stopbits',1);      %   Mahi               % change9
+    video_record_obj = serial('COM1','baudrate',19200,'parity','none','databits',8,'stopbits',1);
+    
+    try
         fopen(obj);
-    %else
-       %obj = -1;
-        %disp('Serial Device Not FOUND!!');
-    %end
+    catch obj_error 
+       obj = -1;
+       warndlg('Exo com port was Not FOUND!!, program will continue without serial access...');
+    end
+    
+    try
+        fopen(video_record_obj);
+    catch video_record_obj_error 
+       video_record_obj = -1;
+       warndlg('Camera com port was Not FOUND!!, program will continue without video capture...');
+    end   
 % obj = 1;
+% video_record_obj = -1;
    
     if use_GUI_for_testing == 1
         %--------------- Call GUI
@@ -1919,7 +1958,8 @@ if test_classifier == 1
         user.testing_data.closeloop_block_num = 0;
         user.testing_data.closeloop_folder_path = closeloop_folder_path;
       
-    [Proc_EEG,Ovr_Spatial_Avg,All_Feature_Vec,GO_Prob,Num_Move_Counts,Markers,all_cloop_prob_threshold, all_cloop_cnts_threshold,Proc_EMG,unproc_eeg] = BMI_Mahi_Closeloop_GUI(user,obj);
+    [Proc_EEG,Ovr_Spatial_Avg,All_Feature_Vec,GO_Prob,Num_Move_Counts,Markers,all_cloop_prob_threshold, all_cloop_cnts_threshold,Proc_EMG,Unproc_EEG] ...
+        = BMI_Mahi_Closeloop_GUI(user,obj,video_record_obj);
     
     else        
         % use script
@@ -1935,14 +1975,20 @@ if test_classifier == 1
         save(var_filename,'Proc_EEG','Proc_EMG','Ovr_Spatial_Avg','All_Feature_Vec','GO_Prob','Num_Move_Counts','Markers','cloop_prob_threshold','cloop_cnts_threshold');
     end
        
- %   if exist('obj','var')
-  %      if obj ~= -1
-            % clear serial port
-           fclose(obj);
-           delete(obj);
-           clear('obj');
-   %     end
-   % end
+     if obj ~= -1
+        % clear serial port
+       fclose(obj);
+       delete(obj);
+       clear('obj');
+     end
+     
+    if video_record_obj ~= -1
+        % clear serial port
+       fclose(video_record_obj);
+       delete(video_record_obj);
+       clear('video_record_obj');
+    end
+   
     % Useful serial port command
     %instrfind, delete(instrfindall)
     

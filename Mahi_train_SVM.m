@@ -14,19 +14,21 @@
 %                  loops
 %               - Added option to load previously computed Performance variable
 % 2/15/15 - Added option to switch between training of SVM and Sparse Representation Classifier (SRC) 
+% 7/27/15 - Tried channel combinations using mRMR algorithm - commented 8/19/15
+% 8/20/15 - Automatically select window length with criteria: minimum window length, such that AUC greater than 95% of maximum AUC. 
 clear;
 %close all;
 %% Global Variables
 myColors = ['g','r','m','k','y','c','m','g','r','b','k','b','r','m','g','r','b','k','y','c','m',...
     'g','r','b','k','y','c','m','g','r','b','k','b','r','m','g','r','b','k','y','c','m'];
 
-% Subject Details
-Subject_name = 'BNBO';
+% Subject Details - change10
+Subject_name = 'PLSH';
 Sess_num = '2';
-Cond_num = 1;  % 1 - Active; 2 - Passive; 3 - Triggered; 4 - Observation 
+Cond_num = 3;  % 1 - Active; 2 - Passive; 3 - Triggered; 4 - Observation 
 Block_num = 160;
 
-folder_path = ['C:\NRI_BMI_Mahi_Project_files\All_Subjects\Subject_' Subject_name '\' Subject_name '_Session' num2str(Sess_num) '\']; % change2
+folder_path = ['C:\NRI_BMI_Mahi_Project_files\All_Subjects\Subject_' Subject_name '\' Subject_name '_Session' num2str(Sess_num) '\']; % change11
 load([folder_path Subject_name '_ses' num2str(Sess_num) '_cond' num2str(Cond_num) '_block' num2str(Block_num) '_average_causal_bpf.mat']);      % Always use causal for training classifier
 
 % Flags to control the Classifier Training
@@ -80,9 +82,9 @@ downsamp_factor = Average.Fs_eeg/Fs_eeg;
     end
 
 %0. Use previously trained models? Ex: CVO, smart_features, etc. 
-use_previous_models = 0;    
+use_previous_models = 1;    % change12
 regular_or_chance_level_classifier = 1; % 0 - chance_level; 1 - Regular classifier design
-use_conventional_features = 0;              % change                              
+use_conventional_features = 1;              % change13                              
 use_smart_features = 1;
 
 if use_previous_models == 1
@@ -109,6 +111,11 @@ else
     classchannels = Average.RP_chans(1:4); % Needs to be optimized
     %classchannels = [14 9 48];
 end
+
+% Added for MRMR algorithm - 7/27/2015, 8/19/2015
+% Average.RP_chans = [Average.RP_chans [24 25 26 57 58]];
+% Average.RP_chans = [43, 9, 32, 10, 44, 13, 48, 14, 49, 15, 52, 19, ... 
+%                53, 20, 54, 24, 57, 25, 58, 26, 4, 38, 5, 39, 6];
 
 %2. Classifier parameters
     kernel_type = 2; % 2 - RBF
@@ -162,7 +169,7 @@ end
 if regular_or_chance_level_classifier == 1
        
 %5. Window Length Optimization Loop Starts -----------------------------    
-window_length_range = [10:20]; %round(0.6*Fs_eeg); %[1:17]; 
+window_length_range = [10:20]; %round(0.6*Fs_eeg); %[1:17];     % change14
 
 for wl = 1:length(window_length_range) 
 % Initialize variables
@@ -262,124 +269,164 @@ move_ch_avg_time = [];
 smart_rest_ch_avg = [];
 rest_ch_avg_time = [];
 
-
-move_ch_avg_ini = mean(move_epochs_s(:,:,classchannels),3);
-rest_ch_avg_ini = mean(rest_epochs_s(:,:,classchannels),3);
-
-mt1 = find(move_erp_time == find_peak_interval(1));
-mt2 = find(move_erp_time == find_peak_interval(2));
-[min_avg(:,1),min_avg(:,2)] = min(move_ch_avg_ini(:,mt1:mt2),[],2); % value, indices
-
-for nt = 1:size(move_ch_avg_ini,1)
-    if (move_erp_time(move_ch_avg_ini(nt,:) == min_avg(nt,1)) <= reject_trial_before) %|| (min_avg(nt,1) > -3)        
-        %plot(move_erp_time(1:26),move_ch_avg_ini(nt,1:26),'r'); hold on;
-        bad_move_trials = [bad_move_trials; nt];
-    else
-        %plot(move_erp_time(1:26),move_ch_avg_ini(nt,1:26)); hold on;
-        good_move_trials = [good_move_trials; nt];
-    end
-end
-
-if wl == length(window_length_range) 
-%     figure;
-%     subplot(2,1,1); hold on;
-%     plot(move_erp_time,move_ch_avg_ini(good_move_trials,:),'b');
-%     title([Subject_name ', Cond ' num2str(Cond_num) ', # Good trials = ' num2str(length(good_move_trials)) ' (' num2str(size(move_ch_avg_ini,1)) ')'],'FontSize',12);
-%     hold on;
-%     plot(move_erp_time,move_ch_avg_ini(bad_move_trials,:),'r');
-%     set(gca,'YDir','reverse');
-%     grid on;
-%     axis([-3.5 1 -15 10]);
+% Comment block open ---- 8/19/2015
+% old_classchannels = classchannels;
+% % Different combinations of eeg channels  - 7/27/2015
+% % total_no_combs = 0;           % commented 8/19/2015
+% % for i = 4:length(Average.RP_chans)
+% %     total_no_combs = total_no_combs + nchoosek(length(Average.RP_chans),i);
+% % end
+% total_no_combs = 25; % added 8/19/2015
+% Channel_comb_matrix = zeros(total_no_combs,length(Average.RP_chans));
+% Mahalanobis_comb_matrix = zeros(total_no_combs,2*no_epochs);
+% Slope_comb_matrix = zeros(total_no_combs,2*no_epochs);
+% Area_comb_matrix = zeros(total_no_combs,2*no_epochs);
+% Peak_comb_matrix = zeros(total_no_combs,2*no_epochs);
 % 
-%     subplot(2,1,2); hold on;
-%     plot(rest_erp_time,rest_ch_avg_ini(good_move_trials,:),'b');
-%     plot(rest_erp_time,rest_ch_avg_ini(bad_move_trials,:),'r');
-%     set(gca,'YDir','reverse');
-%     grid on;
-%     axis([-3.5 1 -15 10]);
-end
+% first_elm = 1;
+% last_elm = 0;
+% % for no_chans = 4:length(Average.RP_chans) 
+% %     % generate combinations - commented 8/19/2015
+% %     chans_combn = nchoosek(Average.RP_chans,no_chans);
+% %     last_elm = first_elm + size(chans_combn,1) - 1;
+% %     Channel_comb_matrix(first_elm:last_elm,1:size(chans_combn,2)) = chans_combn;
+% %     first_elm = last_elm + 1; 
+% % end
+% Channel_comb_matrix(:,1) = Average.RP_chans';   % added 8/19/2015
+% 
+%     for comb = 1:size(Channel_comb_matrix,1)
+%          Smart_Features = [];
+%          smart_Mu_move = []; smart_Cov_Mat = [];
+%          conv_Mu_move = []; conv_Cov_Mat = [];
+%          bad_move_trials = []; 
+%          good_move_trials = [];
+%          
+%         classchannels = Channel_comb_matrix(comb,:);
+%         classchannels = classchannels(classchannels~=0);
+% Comment block close ---- 8/19/2015
 
-if keep_bad_trials == 1
-    good_move_trials = 1:size(move_epochs_s,1);
-    good_trials_move_ch_avg = move_ch_avg(good_move_trials,:);
-    good_trials_rest_ch_avg = rest_ch_avg(good_move_trials,:);
-else
-    % Else remove bad trials from Conventional Features, move_ch_avg and
-    % rest_ch_avg
-    % Commented on 6/18/14
-    % Conventional_Features([bad_move_trials; (size(Conventional_Features,1)/2)+bad_move_trials],:) = [];
-%     good_trials_move_ch_avg = move_ch_avg(good_move_trials,:);
-%     good_trials_rest_ch_avg = rest_ch_avg(good_move_trials,:);
-end
+    move_ch_avg_ini = mean(move_epochs_s(:,:,classchannels),3);
+    rest_ch_avg_ini = mean(rest_epochs_s(:,:,classchannels),3);
 
-for i = 1:length(good_move_trials)
-    move_window_end = find(move_ch_avg_ini(good_move_trials(i),:) == min_avg(good_move_trials(i),1)); % index of Peak(min) value
-    move_window_start = move_window_end - window_length; 
-    rest_window_start = find(rest_erp_time == rest_window(1));
-    rest_window_end = rest_window_start + window_length;
-    
-    smart_move_ch_avg(i,:) = move_ch_avg_ini(good_move_trials(i),move_window_start:move_window_end);
-    move_ch_avg_time(i,:) = move_erp_time(move_window_start:move_window_end);
-    smart_rest_ch_avg(i,:) = rest_ch_avg_ini(good_move_trials(i),rest_window_start:rest_window_end); 
-    rest_ch_avg_time(i,:) = rest_erp_time(rest_window_start:rest_window_end);
-    
-if wl == length(window_length_range) 
-%    subplot(2,1,1); hold on;
-%    plot(move_ch_avg_time(i,:),smart_move_ch_avg(i,:),'k','LineWidth',2); hold on;   
-%    subplot(2,1,2); hold on;
-%    plot(rest_ch_avg_time(i,:),smart_rest_ch_avg(i,:),'r','LineWidth',2); hold on;
-end
+    mt1 = find(move_erp_time == find_peak_interval(1));
+    mt2 = find(move_erp_time == find_peak_interval(2));
+    [min_avg(:,1),min_avg(:,2)] = min(move_ch_avg_ini(:,mt1:mt2),[],2); % value, indices
 
-end
-
-% Reinitialize
-no_epochs = size(smart_move_ch_avg,1);        
-data_set_labels = [ones(no_epochs,1); 2*ones(no_epochs,1)];
-
-% figure; hold on;
-% for j = 1:size(move_ch_avg,1)
-%     plot((-0.5:0.1:0),move_ch_avg(j,:),'k','LineWidth',2);
-% end
-% set(gca,'YDir','reverse');
-% grid on;
-% axis([-0.5 0 -15 10]);
-
-%1. Slope
-Smart_Features = [(smart_move_ch_avg(:,end) - smart_move_ch_avg(:,1))./(move_ch_avg_time(:,end) - move_ch_avg_time(:,1));
-                  (smart_rest_ch_avg(:,end) - smart_rest_ch_avg(:,1))./(rest_ch_avg_time(:,end) - rest_ch_avg_time(:,1))];
-
-%2. Negative Peak 
-Smart_Features = [Smart_Features [min(smart_move_ch_avg,[],2); min(smart_rest_ch_avg,[],2)]];
-
-%3. Area under curve
-for ind1 = 1:size(smart_move_ch_avg,1)
-    AUC_move(ind1) = trapz(move_ch_avg_time(ind1,:),smart_move_ch_avg(ind1,:));
-    AUC_rest(ind1) = trapz(rest_ch_avg_time(ind1,:),smart_rest_ch_avg(ind1,:));
-end
-Smart_Features = [Smart_Features [AUC_move';AUC_rest']];
-                       
-%6. Mahalanobis distance of each trial from average over trials
-    % Use formula for computation of Mahalanobis distance
-    mahal_dist2 = zeros(2*no_epochs,1);
-    for d = 1:no_epochs
-        mahal_dist2(d) = sqrt(mahal(smart_move_ch_avg(d,:),smart_move_ch_avg(:,:)));
-        mahal_dist2(d + no_epochs) = sqrt(mahal(smart_rest_ch_avg(d,:),smart_move_ch_avg(:,:)));
+    for nt = 1:size(move_ch_avg_ini,1)
+        if (move_erp_time(move_ch_avg_ini(nt,:) == min_avg(nt,1)) <= reject_trial_before) %|| (min_avg(nt,1) > -3)        
+            %plot(move_erp_time(1:26),move_ch_avg_ini(nt,1:26),'r'); hold on;
+            bad_move_trials = [bad_move_trials; nt];
+        else
+            %plot(move_erp_time(1:26),move_ch_avg_ini(nt,1:26)); hold on;
+            good_move_trials = [good_move_trials; nt];
+        end
     end
-    
-    % Direct computation of Mahalanobis distance
-    smart_mahal_dist = zeros(2*no_epochs,1);
-    smart_Cov_Mat = cov(smart_move_ch_avg);
-    smart_Mu_move = mean(smart_move_ch_avg,1);
-    for d = 1:no_epochs
-        x = smart_move_ch_avg(d,:);
-        smart_mahal_dist(d) = sqrt((x-smart_Mu_move)/(smart_Cov_Mat)*(x-smart_Mu_move)');
-        y = smart_rest_ch_avg(d,:);
-        smart_mahal_dist(d + no_epochs) = sqrt((y-smart_Mu_move)/(smart_Cov_Mat)*(y-smart_Mu_move)');
-    end
-    Smart_Features = [Smart_Features smart_mahal_dist];
+
+        if wl == length(window_length_range) 
+            figure;
+            subplot(2,1,1); hold on;
+            plot(move_erp_time,move_ch_avg_ini(good_move_trials,:),'b');
+            title([Subject_name ', Cond ' num2str(Cond_num) ', # Good trials = ' num2str(length(good_move_trials)) ' (' num2str(size(move_ch_avg_ini,1)) ')'],'FontSize',12);
+            hold on;
+            plot(move_erp_time,move_ch_avg_ini(bad_move_trials,:),'r');
+            set(gca,'YDir','reverse');
+            grid on;
+            axis([-3.5 1 -15 10]);
+        
+            subplot(2,1,2); hold on;
+            plot(rest_erp_time,rest_ch_avg_ini(good_move_trials,:),'b');
+            plot(rest_erp_time,rest_ch_avg_ini(bad_move_trials,:),'r');
+            set(gca,'YDir','reverse');
+            grid on;
+            axis([-3.5 1 -15 10]);
+        end
+
+        if keep_bad_trials == 1
+            good_move_trials = 1:size(move_epochs_s,1);
+            good_trials_move_ch_avg = move_ch_avg(good_move_trials,:);
+            good_trials_rest_ch_avg = rest_ch_avg(good_move_trials,:);
+        else
+            % Else remove bad trials from Conventional Features, move_ch_avg and
+            % rest_ch_avg
+            % Commented on 6/18/14
+            % Conventional_Features([bad_move_trials; (size(Conventional_Features,1)/2)+bad_move_trials],:) = [];
+        %     good_trials_move_ch_avg = move_ch_avg(good_move_trials,:);
+        %     good_trials_rest_ch_avg = rest_ch_avg(good_move_trials,:);
+        end
+
+        for i = 1:length(good_move_trials)
+            move_window_end = find(move_ch_avg_ini(good_move_trials(i),:) == min_avg(good_move_trials(i),1)); % index of Peak(min) value
+            move_window_start = move_window_end - window_length; 
+            rest_window_start = find(rest_erp_time == rest_window(1));
+            rest_window_end = rest_window_start + window_length;
+
+            smart_move_ch_avg(i,:) = move_ch_avg_ini(good_move_trials(i),move_window_start:move_window_end);
+            move_ch_avg_time(i,:) = move_erp_time(move_window_start:move_window_end);
+            smart_rest_ch_avg(i,:) = rest_ch_avg_ini(good_move_trials(i),rest_window_start:rest_window_end); 
+            rest_ch_avg_time(i,:) = rest_erp_time(rest_window_start:rest_window_end);
+
+        if wl == length(window_length_range) 
+           subplot(2,1,1); hold on;
+           plot(move_ch_avg_time(i,:),smart_move_ch_avg(i,:),'k','LineWidth',2); hold on;   
+           subplot(2,1,2); hold on;
+           plot(rest_ch_avg_time(i,:),smart_rest_ch_avg(i,:),'r','LineWidth',2); hold on;
+        end
+
+        end
+
+        % Reinitialize
+        no_epochs = size(smart_move_ch_avg,1);        
+        data_set_labels = [ones(no_epochs,1); 2*ones(no_epochs,1)];
+
+        % figure; hold on;
+        % for j = 1:size(move_ch_avg,1)
+        %     plot((-0.5:0.1:0),move_ch_avg(j,:),'k','LineWidth',2);
+        % end
+        % set(gca,'YDir','reverse');
+        % grid on;
+        % axis([-0.5 0 -15 10]);
+
+        %1. Slope
+        Smart_Features = [(smart_move_ch_avg(:,end) - smart_move_ch_avg(:,1))./(move_ch_avg_time(:,end) - move_ch_avg_time(:,1));
+                          (smart_rest_ch_avg(:,end) - smart_rest_ch_avg(:,1))./(rest_ch_avg_time(:,end) - rest_ch_avg_time(:,1))];
+
+        %2. Negative Peak 
+        Smart_Features = [Smart_Features [min(smart_move_ch_avg,[],2); min(smart_rest_ch_avg,[],2)]];
+
+        %3. Area under curve
+        for ind1 = 1:size(smart_move_ch_avg,1)
+            AUC_move(ind1) = trapz(move_ch_avg_time(ind1,:),smart_move_ch_avg(ind1,:));
+            AUC_rest(ind1) = trapz(rest_ch_avg_time(ind1,:),smart_rest_ch_avg(ind1,:));
+        end
+        Smart_Features = [Smart_Features [AUC_move';AUC_rest']];
+
+        %6. Mahalanobis distance of each trial from average over trials
+            % Use formula for computation of Mahalanobis distance
+            mahal_dist2 = zeros(2*no_epochs,1);
+            for d = 1:no_epochs
+                mahal_dist2(d) = sqrt(mahal(smart_move_ch_avg(d,:),smart_move_ch_avg(:,:)));
+                mahal_dist2(d + no_epochs) = sqrt(mahal(smart_rest_ch_avg(d,:),smart_move_ch_avg(:,:)));
+            end
+
+            % Direct computation of Mahalanobis distance
+            smart_mahal_dist = zeros(2*no_epochs,1);
+            smart_Cov_Mat = cov(smart_move_ch_avg);
+            smart_Mu_move = mean(smart_move_ch_avg,1);
+            for d = 1:no_epochs
+                x = smart_move_ch_avg(d,:);
+                smart_mahal_dist(d) = sqrt((x-smart_Mu_move)/(smart_Cov_Mat)*(x-smart_Mu_move)');
+                y = smart_rest_ch_avg(d,:);
+                smart_mahal_dist(d + no_epochs) = sqrt((y-smart_Mu_move)/(smart_Cov_Mat)*(y-smart_Mu_move)');
+            end
+            Smart_Features = [Smart_Features smart_mahal_dist];
+            
+            % Comment from here 7/27/2015 - commented on 8/19/2015
+%             Mahalanobis_comb_matrix(comb,:) = Smart_Features(:,4)';
+%             Slope_comb_matrix(comb,:) = Smart_Features(:,1)';
+%             Peak_comb_matrix(comb,:) = Smart_Features(:,2)';
+%             Area_comb_matrix(comb,:) = Smart_Features(:,3)';
+%            end % end for comb = 1:size(Channel_comb_matrix,1)
 end    
-
-
 %% Data Visualization
 
 %     figure;
@@ -491,11 +538,11 @@ end
 
         no_epochs = round(size(classifier_dataset,1)/2);
         
-%         if use_previous_models == 1                                                                % Use cross validation trials from previous analysis
-%             CVO = prev_Performance.CVO;
-%         else
-        CVO = cvpartition(no_epochs,'kfold',10);
-%         end
+        %if use_previous_models == 1                                                                % Use cross validation trials from previous analysis - can't use it because some trials are rejected - 8/19/2015
+            %CVO = prev_Performance.CVO;
+        %else
+            CVO = cvpartition(no_epochs,'kfold',10);
+        %end
         data_set_labels = [ones(no_epochs,1); 2*ones(no_epochs,1)]; %Classifier labels 1 - Go, 2 - No-Go 
 
     % Support Vector Machines Classifier for EEG
@@ -747,11 +794,15 @@ if use_svm_classifier == 1
        subplot(2,1,1);hold on; grid on;
        conv_fea_legend = plot(window_length_range./Fs_eeg, roc_OPT_AUC(:,3,use_feature)','-b','LineWidth',2);
        plot(window_length_range./Fs_eeg, roc_OPT_AUC(:,3,use_feature)','sb','MarkerSize',3,'LineWidth',2,'MarkerFaceColor',[0 0 1]);
-       ylim([0.5 1]);
+       ylim([0 1]);
        ylabel('AUC','FontSize',10);
        xlabel('Window Length (sec.)','FontSize',10);
-       conv_optimal_window_length = input('Enter Optimal Window Length (Conventional Features): ');
-       conv_opt_wl_ind = find(window_length_range./Fs_eeg == conv_optimal_window_length);
+       % conv_optimal_window_length = input('Enter Optimal Window Length (Conventional Features): ');  % commented on 8/20/2015
+       % conv_opt_wl_ind = find(window_length_range./Fs_eeg == conv_optimal_window_length);
+       %[max_area_value,conv_opt_wl_ind] = max(round(roc_OPT_AUC(:,3,use_feature).*100)./100);
+       max_auc = max(roc_OPT_AUC(:,3,use_feature));
+       conv_opt_wl_ind = find(roc_OPT_AUC(:,3,use_feature) >= 0.95*max_auc,1);
+       conv_optimal_window_length = window_length_range(conv_opt_wl_ind)/Fs_eeg;       
        plot(conv_optimal_window_length, roc_OPT_AUC(conv_opt_wl_ind,3,use_feature)','ok','MarkerSize',10,'LineWidth',2);
 
        subplot(2,1,2);hold on; grid on;
@@ -776,11 +827,14 @@ if use_svm_classifier == 1
        subplot(2,1,1);hold on; grid on;
        smart_fea_legend = plot(window_length_range./Fs_eeg, roc_OPT_AUC(:,3,use_feature)','-r','LineWidth',2);
        plot(window_length_range./Fs_eeg, roc_OPT_AUC(:,3,use_feature)','sr','MarkerSize',3,'LineWidth',2,'MarkerFaceColor',[0 0 1]);
-       ylim([0.5 1]);
+       ylim([0 1]);
        ylabel('AUC','FontSize',10);
        xlabel('Window Length (sec.)','FontSize',10);
-       smart_optimal_window_length = input('Enter Optimal Window Length (Smart Features): ');
-       smart_opt_wl_ind = find(window_length_range./Fs_eeg == smart_optimal_window_length);
+       % smart_optimal_window_length = input('Enter Optimal Window Length (Smart Features): '); % commented on 8/20/15
+       % smart_opt_wl_ind = find(window_length_range./Fs_eeg == smart_optimal_window_length);
+       max_auc = max(roc_OPT_AUC(:,3,use_feature));
+       smart_opt_wl_ind = find(roc_OPT_AUC(:,3,use_feature) >= 0.95*max_auc,1);
+       smart_optimal_window_length = window_length_range(smart_opt_wl_ind)/Fs_eeg;       
        plot(smart_optimal_window_length, roc_OPT_AUC(smart_opt_wl_ind,3,use_feature)','ok','MarkerSize',10,'LineWidth',2);
 
        subplot(2,1,2);hold on; grid on;
@@ -1078,7 +1132,7 @@ if use_svm_classifier == 1
     %     file_identifier = [ file_identifier '_offline'];
     % end
 
-    filename2 = [folder_path Subject_name '_ses' num2str(Sess_num) '_cond' num2str(Cond_num) '_block' num2str(Block_num) '_performance_optimized' file_identifier '.mat']; %datestr(now,'dd_mm_yy_HHMM')
+    filename2 = [folder_path Subject_name '_ses' num2str(Sess_num) '_cond' num2str(Cond_num) '_block' num2str(Block_num) '_performance_optimized' file_identifier '_bpf.mat']; %datestr(now,'dd_mm_yy_HHMM')
     save(filename2,'Performance');   
 end
 
@@ -1168,34 +1222,52 @@ if use_src_classifier == 1
 end
 %% Plot sensitivity & specificity
     if use_svm_classifier == 1
-% %     figure; 
-% %     group_names = {'Online Fixed','Fixed_old', 'Online Flexible'};
-% %     online_fixed = Performance.All_eeg_accur{Performance.conv_opt_wl_ind}(1,:);
-% %     %online_variable = Performance.All_eeg_accur{Performance.smart_opt_wl_ind}(2,:);
-% %     online_variable_old = prev_Performance.All_eeg_accur{prev_Performance.conv_opt_wl_ind}(1,:);
-% %     online_variable = prev_Performance.All_eeg_accur{prev_Performance.smart_opt_wl_ind}(2,:);
-% % 
-% %     % filename3 = [folder_path Subject_name '_ses' num2str(Sess_num) '_cond' num2str(Cond_num) '_block80_performance_optimized_fixed_smart_offline_nic.mat'];
-% %     % load(filename3);
-% %     % offline_fixed = Performance.All_eeg_accur{Performance.conv_opt_wl_ind}(1,:);
-% % 
-% % 
-% %     h = boxplot([online_fixed' online_variable_old' online_variable'] ,'labels',group_names,'widths',0.5);
-% %      set(h,'LineWidth',2);
-% %     v = axis;
-% %     axis([v(1) v(2) 0 100]);
-% %     ylabel('Classification Accuracy (%)','FontSize',12);
-% %     title([Subject_name ', Mode ' num2str(Cond_num)],'FontSize',12);
+        if use_previous_models == 1
+            figure; 
+            group_names = {'Fixed','Variable', 'Variable old'};
+            online_fixed = Performance.All_eeg_accur{Performance.conv_opt_wl_ind}(1,:);
+            online_variable = Performance.All_eeg_accur{Performance.smart_opt_wl_ind}(2,:);
+            %online_fixed_old = prev_Performance.All_eeg_accur{prev_Performance.conv_opt_wl_ind}(1,:);
+            online_variable_old = prev_Performance.All_eeg_accur{prev_Performance.smart_opt_wl_ind}(2,:);
 
-    %export_fig 'TA_ses1_cond3_smart_conv_comparison' '-png' '-transparent'
+            % filename3 = [folder_path Subject_name '_ses' num2str(Sess_num) '_cond' num2str(Cond_num) '_block80_performance_optimized_fixed_smart_offline_nic.mat'];
+            % load(filename3);
+            % offline_fixed = Performance.All_eeg_accur{Performance.conv_opt_wl_ind}(1,:);
 
-    % if use_shifting_window_CV == 1
-    %     title('Online Simulation','FontSize',12);
-    %     %mtit('Online Simulation','fontsize',12,'color',[0 0 1],'xoff',0,'yoff',-1.15);
-    % else
-    %     title('Offline Validation','FontSize',12);
-    %     %mtit('Offline Validation','fontsize',12,'color',[0 0 1],'xoff',0,'yoff',-1.15);
-    % end
+
+            h = boxplot([online_fixed' online_variable' online_variable_old'] ,'labels',group_names,'widths',0.5);
+             set(h,'LineWidth',2);
+            v = axis;
+            axis([v(1) v(2) 0 100]);
+            ylabel('Classification Accuracy (%)','FontSize',12);
+            title([Subject_name ', Mode ' num2str(Cond_num)],'FontSize',12);
+
+            %export_fig 'TA_ses1_cond3_smart_conv_comparison' '-png' '-transparent'
+
+            % if use_shifting_window_CV == 1
+            %     title('Online Simulation','FontSize',12);
+            %     %mtit('Online Simulation','fontsize',12,'color',[0 0 1],'xoff',0,'yoff',-1.15);
+            % else
+            %     title('Offline Validation','FontSize',12);
+            %     %mtit('Offline Validation','fontsize',12,'color',[0 0 1],'xoff',0,'yoff',-1.15);
+            % end
+
+            p_values = [];
+            % both-tailed Wilcoxon Rank sum Test, i.e. median(day 4) >< median(day 5)
+            [pwilcoxon,h,stats] = ranksum(online_variable,online_fixed,'alpha',0.05,'tail','right');
+            if (pwilcoxon <= 0.05) 
+                p_values = [p_values 0.05];
+            else
+                p_values = [p_values NaN];
+            end
+            [pwilcoxon,h,stats] = ranksum(online_variable,online_variable_old,'alpha',0.05,'tail','right');
+            if (pwilcoxon <= 0.05) 
+                p_values = [p_values 0.05];
+            else
+                p_values = [p_values NaN];
+            end
+            sigstar({[1 2],[2 3]},p_values);
+        end         
     end
 elseif regular_or_chance_level_classifier == 0
 % Estimate chance level performance by permutation of labels and data
