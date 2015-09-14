@@ -29,6 +29,10 @@ function varargout = BMI_Mahi_Closeloop_GUI(varargin)
 % 8-10-2015 - Added and modified video recording function
 %                     - Added second Serial COM port for triggering video capture in remote device
 % 8-22-2015 - Replaced low pass and high pass filters with a single band pass filter [0.1 - 1 Hz]
+% 8-24-2015 - Added new formula for computing trigger stamp when EEG_GO and EEG_EMG_GO occurs
+% 9-08-2014 - Reverting back to high pass followed by low pass filter instead of band pass filter because of filter order and stability issues.
+%                     - Changing order of low pass and large laplacian filters - should not affect output
+% 9/14/2015 - Added baseline correction for EMG RMS calculation. The baseline is taken as 100 samples or ~ 30 sec during rest. 
 %--------------------------------------------------------------------------------------------------
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -153,8 +157,8 @@ function varargout = BMI_Mahi_Closeloop_GUI_OutputFcn(hObject, eventdata, handle
 
 global processed_eeg processed_emg Overall_spatial_chan_avg all_feature_vectors GO_Probabilities
 global move_counts marker_block all_cloop_prob_threshold all_cloop_cnts_threshold
-global downsamp_factor
-global unprocessed_eeg % test_change
+global downsamp_factor emg_rms_baseline
+%global unprocessed_eeg % test_change
 
 varargout{1} = processed_eeg;       
 varargout{2} = Overall_spatial_chan_avg;
@@ -166,11 +170,12 @@ varargout{7} = all_cloop_prob_threshold;
 varargout{8} = all_cloop_cnts_threshold;
 %varargout{9} = downsample(processed_emg',downsamp_factor)';
 if ~isempty(processed_emg)
-    varargout{9} = resample(processed_emg',6,1)';
+    %varargout{9} = resample(processed_emg',6,1)';    % Not required to resample - 9/14/2015
+    varargout{9} = processed_emg;
 else
     varargout{9} = 0;
 end
-varargout{10} = unprocessed_eeg; % test_change
+varargout{10} = emg_rms_baseline; 
 
 % The figure can be deleted now
 delete(handles.figure1);
@@ -342,7 +347,7 @@ function pushbutton_start_closeloop_Callback(hObject, eventdata, handles)
                  '_ses' num2str(handles.user.calibration_data.sess_num)...
                  '_cond' num2str(handles.user.calibration_data.cond_num)...
                  '_block' num2str(handles.user.calibration_data.block_num)...
-                 '_performance_optimized_causal.mat'];
+                 '_performance_optimized_smart.mat'];           % change17
    
    handles.user.testing_data.closeloop_block_num = handles.user.testing_data.closeloop_block_num + 1;
    set(handles.textbox_cloop_block_num,'String',num2str(handles.user.testing_data.closeloop_block_num));          
@@ -357,8 +362,9 @@ function pushbutton_start_closeloop_Callback(hObject, eventdata, handles)
             
     load(handles.user.testing_data.classifier_filename);
     CloopClassifier = Performance;
-    classifier_channels = CloopClassifier.classchannels;
-    emg_classifier_channels = [42 41 51 17 45 46 55 22]; % [LB1 LB2 LT1 LT2 RB1 RB2 RT1 RT2] % change17
+    % classifier_channels = CloopClassifier.classchannels;
+    classifier_channels =   Performance.optimized_channels; % change18 - Added 9/7/2015
+    emg_classifier_channels = [42 41 51 17 45 46 55 22]; % [LB1 LB2 LT1 LT2 RB1 RB2 RT1 RT2] % change19
         
     if handles.system.left_impaired 
         emg_control_channels = [1 2];
@@ -380,18 +386,18 @@ function pushbutton_start_closeloop_Callback(hObject, eventdata, handles)
     Best_BMI_classifier = CloopClassifier.eeg_svm_model{max_acc_index};
 
     % Classifier parameters
-    cloop_prob_threshold = CloopClassifier.opt_prob_threshold;            
-    cloop_cnts_threshold  = CloopClassifier.consecutive_cnts_threshold;        % Number of consecutive valid cnts required to accept as 'GO'
-    emg_mvc_threshold = 25;             % change18
-    emg_tricep_threshold = 25;
+    cloop_prob_threshold = 0.844; %CloopClassifier.opt_prob_threshold;            
+    cloop_cnts_threshold  = 8; %CloopClassifier.consecutive_cnts_threshold;        % Number of consecutive valid cnts required to accept as 'GO'
+    emg_mvc_threshold = 15;             % change20       % Biceps
+    emg_tricep_threshold = 20;          % Triceps
 
     DEFINE_GO = 1;
     DEFINE_NOGO = 2;
     target_trig_label = 'S  8';                 
     move_trig_label = 'S 16';  % 'S 32'; %'S  8'; %'100';   
     rest_trig_label = 'S  2';  % 'S  2'; %'200';
-    block_start_label = 'S 10'; %'S 10';        % change19
-    block_stop_label = 'S 26';
+    block_start_label = 'S 42'; %'S 10';        % change21
+    block_stop_label = 'S254';
     
     % Change for individual recorder host
     recorderip = '127.0.0.1';
@@ -430,7 +436,7 @@ function pushbutton_start_closeloop_Callback(hObject, eventdata, handles)
     % [handles.user.testing_data.vidobj,handles.user.testing_data.capture_fig] = start_video_capture(handles);  % commented 8-11-2015
     if handles.user.testing_data.serial_vidobj ~= -1
         video_filename = [handles.user.calibration_data.subject_initials '_ses' num2str(handles.user.testing_data.closeloop_sess_num)...
-                                          '_block' num2str(handles.user.testing_data.closeloop_block_num) '_closeloop_video'];
+                                          '_block' num2str(handles.user.testing_data.closeloop_block_num) '_closeloop_video_' datestr(clock,'mm-dd-yyyy_HH_MM_SS')];
         fprintf(handles.user.testing_data.serial_vidobj,'%s\n',['Start ' video_filename]);       % send start message and filename to remote webcam, SPACE after Start is required
     end
     
@@ -626,16 +632,17 @@ function EEGTimer_Callback(timer_object,eventdata,hObject)
     global downsamp_factor pkt_size emg_pkt_size 
     global new_pkt eeg_bp_filt_pkt spatial_filt_pkt emg_bp_filt_pkt
     global eeg_bpf_df2sos emg_bpf_df2sos prev_eeg_bp_filt_pkt_3D prev_emg_bp_filt_pkt_3D
-    global emg_new_pkt emg_diff_pkt emg_rms_pkt
+    global emg_new_pkt emg_diff_pkt emg_rms_pkt emg_rms_baseline update_emg_baseline
     global firstblock marker_block marker_type
     global processed_eeg processed_emg Overall_spatial_chan_avg all_feature_vectors GO_Probabilities
     global valid_move_cnt move_counts feature_matrix sliding_window start_prediction kcount
     global all_cloop_prob_threshold all_cloop_cnts_threshold
     global required_chnns L_LAP M_CAR
+    global filt_order hp_filt_pkt lp_filt_pkt hpf_df2sos lpf_df2sos prev_lp_filt_pkt_3D prev_hp_filt_pkt_3D % Parameters for low pass and high pass EEG filters 
     
     % ----- unused variables - 8/22/2015
-    global unprocessed_eeg 
-    global filt_order hp_filt_pkt lp_filt_pkt hpf_df2sos lpf_df2sos prev_lp_filt_pkt_3D prev_hp_filt_pkt_3D % Parameters for low pass and high pass EEG filters - removed 8/22/2015
+    % global unprocessed_eeg 
+    
     %global prev_pkt prev_spatial_filt_pkt
     %global  prev_hp_filt_pkt  prev_lp_filt_pkt prev_emg_bp_filt_pkt
     %global emg_prev_pkt prev_emg_abs_diff_pkt prev_emg_mvc_pkt prev_emg_diff_pkt emg_abs_diff_pkt emg_mvc_pkt
@@ -675,9 +682,11 @@ function EEGTimer_Callback(timer_object,eventdata,hObject)
                             hp_filt_pkt = zeros(total_chnns,pkt_size);
                             %prev_hp_filt_pkt =  zeros(total_chnns,pkt_size);
                             prev_hp_filt_pkt_3D = zeros(2,2,total_chnns);                                                                                                              
-                            lp_filt_pkt = zeros(length(classifier_channels),pkt_size);      % Use only classifier channels
+                            % lp_filt_pkt = zeros(length(classifier_channels),pkt_size);      % Use only classifier channels; commented on 9/8/2015
+                            lp_filt_pkt = zeros(total_chnns,pkt_size);
                             %prev_lp_filt_pkt = zeros(length(classifier_channels),pkt_size);     
-                            prev_lp_filt_pkt_3D = zeros(2,2,length(classifier_channels)); 
+                            % prev_lp_filt_pkt_3D = zeros(2,2,length(classifier_channels)); % commented on 9/8/2015
+                            prev_lp_filt_pkt_3D = zeros(2,2,total_chnns); 
                             eeg_bp_filt_pkt = zeros(total_chnns,pkt_size);
                             prev_eeg_bp_filt_pkt_3D = zeros(2,2,total_chnns);     
                             spatial_filt_pkt = zeros(total_chnns,pkt_size);
@@ -713,7 +722,7 @@ function EEGTimer_Callback(timer_object,eventdata,hObject)
 
                             processed_eeg = [];
                             processed_emg = [];
-                            unprocessed_eeg = [];
+                            % unprocessed_eeg = [];
                             Overall_spatial_chan_avg = [];
                             %lpf_eeg = [];
                             %raster_signal = [];
@@ -763,11 +772,11 @@ function EEGTimer_Callback(timer_object,eventdata,hObject)
                                         39, 2, 38, 49, 40;
                                          6,  2, 5, 15, 7;
                                          % Row FC
-                                         43, 34, 42, 52, 32;
+                                         43, 34, 8, 52, 32;        % Instead of Ch. 42 using  Ch. 8, because Ch. 42 is now being used for recording EMG - 8/28/2015
                                           9, 34, 8, 19, 10;
                                          32, 28, 43, 53, 44;    
                                          10, 35, 9, 11, 20;
-                                         44, 35, 32, 54, 45; 
+                                         44, 35, 32, 54, 11;    % Instead of Ch. 45 using  Ch. 11
                                          % Row C
                                          13, 4, 12, 24, 14;
                                          48, 38, 47, 57, 49;
@@ -775,11 +784,11 @@ function EEGTimer_Callback(timer_object,eventdata,hObject)
                                          49, 39, 48, 58, 50;
                                          15, 6, 14, 26, 16;
                                          % Row CP
-                                         52, 43, 51, 60, 53;
+                                          52, 43, 18, 60, 53;    % Instead of Ch. 51 using  Ch. 18
                                          19, 9, 18, 61, 20; 
                                          53, 32, 52, 62, 54;
                                          20, 10, 19, 63, 21;
-                                         54, 44, 53, 64, 55;
+                                         54, 44, 53, 64, 21;    % Instead of Ch. 55 using  Ch. 21
                                          % Row P
                                          24, 13, 23, 29, 25;
                                          57, 48, 56, 30, 58;
@@ -821,6 +830,7 @@ function EEGTimer_Callback(timer_object,eventdata,hObject)
                                 % Initialize EMG variables here because
                                 % packet size changes for real-time and simulated EEG recordings 
                                 % emg_pkt_size = datahdr.points;
+                                % EMG sampling rate works out to be 3.33 Hz
                                 emg_pkt_size = int32((6/resamp_Fs)*orig_Fs);           % 6 samples --> 300ms @ 20 Hz, 150 samples --> 300ms @ 500 Hz; EMG window length = 300 ms
                                 emg_new_pkt = zeros(length(emg_classifier_channels),emg_pkt_size);
                                 %emg_prev_pkt = zeros(length(emg_classifier_channels),emg_pkt_size);
@@ -828,16 +838,19 @@ function EEGTimer_Callback(timer_object,eventdata,hObject)
                                 %prev_emg_bp_filt_pkt = zeros(length(emg_classifier_channels),emg_pkt_size);
                                 prev_emg_bp_filt_pkt_3D = zeros(2,2,length(emg_classifier_channels));
                                 % emg_abs_diff_pkt = zeros(2,emg_pkt_size);
-                                emg_diff_pkt = zeros(2,emg_pkt_size);
+                                emg_diff_pkt = zeros(4,emg_pkt_size);
                                 % emg_mvc_pkt = zeros(2,emg_pkt_size);
-                                emg_rms_pkt = [0;0];
+                                emg_rms_pkt = [0;0;0;0];
+                                emg_rms_baseline = [0;0;0;0];
+                                update_emg_baseline = 0;
                                 % prev_emg_abs_diff_pkt = zeros(2,emg_pkt_size);
                                 % prev_emg_mvc_pkt = zeros(2,emg_pkt_size);
                                 % prev_emg_diff_pkt = zeros(2,emg_pkt_size);
                                 
                                 
                                 if start_prediction == true     % Used when calling ball-game GUI                                                                          
-                                    marker_block = [marker_block; [datahdr.block*datahdr.points,50]];      % Not completely accurate
+                                    %marker_block = [marker_block; [datahdr.block*datahdr.points,50]];      % Not completely accurate
+                                    marker_block = [marker_block; [((datahdr.block - 1)*datahdr.points + 1),50]];  % Added 8/24/2015
                                 end
                                 firstblock = false;
                             end
@@ -852,17 +865,28 @@ function EEGTimer_Callback(timer_object,eventdata,hObject)
                                 for m = 1:datahdr.markerCount
                                     %disp(markers(m));
                                     if (strcmp(markers(m).description,move_trig_label))         % Movement onset                                        
-                                        marker_block = [marker_block; [markers(m).sample_num,100]];
+                                        marker_block = [marker_block; [double(markers(m).sample_num),100]];
                                         %kcount = kcount + 1;
                                     elseif (strcmp(markers(m).description,rest_trig_label))     % Targets appear
                                        % baseline = feature_data;  
                                        % new_baseline = true;
-                                       %marker_block = [marker_block; [markers(m).sample_num,200]];
+                                       marker_block = [marker_block; [double(markers(m).sample_num),2]];
+                                   elseif (strcmp(markers(m).description, target_trig_label))           % Target reached
+                                        marker_block = [marker_block; [double(markers(m).sample_num),8]];
+                                    elseif (strcmp(markers(m).description, 'S  4'))                      % next is catch trials
+                                        marker_block = [marker_block; [double(markers(m).sample_num),4]];
+                                    elseif (strcmp(markers(m).description,'S 12'))                      % Target reached + next is catch trial
+                                        marker_block = [marker_block; [double(markers(m).sample_num),8]; [double(markers(m).sample_num),4]];
+                                    elseif (strcmp(markers(m).description,'S  1'))                      % Timeout occured
+                                        marker_block = [marker_block; [double(markers(m).sample_num),350]];
+                                    elseif (strcmp(markers(m).description,'S  64'))                      % EEG_GO prediction occured
+                                        marker_block = [marker_block; [double(markers(m).sample_num),64]];
                                     elseif ((strcmp(markers(m).description,block_start_label))  || (strcmp(markers(m).description,block_stop_label)))  % Start/Stop Prediction
                                        start_prediction = ~start_prediction; 
-                                       marker_block = [marker_block; [markers(m).sample_num,50]];
+                                       marker_block = [marker_block; [double(markers(m).sample_num),50]];
                                        if start_prediction == true
                                            disp('Starting Prediction');
+                                           update_emg_baseline = 1;        % Added 9/14/2015
                                        else
                                            disp('Stoping Prediction');
                                        end
@@ -909,12 +933,21 @@ function EEGTimer_Callback(timer_object,eventdata,hObject)
                                                                          emg_bp_filt_pkt(3,:) - emg_bp_filt_pkt(4,:);            % Left Triceps
                                                                          emg_bp_filt_pkt(5,:) - emg_bp_filt_pkt(6,:);            % Right Biceps
                                                                          emg_bp_filt_pkt(7,:) - emg_bp_filt_pkt(8,:)];           % Right Triceps   
-                                                                     
+                                        
+                                       % Calcuate emg baseline for RMS - Added 9/14/2015
+                                       if update_emg_baseline == 1
+                                           % look back at 33 samples ~ 10 seconds
+                                           emg_rms_baseline = mean(processed_emg(:,end-33+1:end),2);
+                                           update_emg_baseline = 0;
+                                       end
+                                       
                                        % Calculate EMG RMS value
                                            %emg_rms_pkt = [sqrt(mean(emg_diff_pkt(1,:).^2));...
                                             %                                                          sqrt(mean(emg_diff_pkt(2,:).^2))]; % commented 7-24-2015 
-                                            emg_rms_pkt = sqrt(mean(emg_diff_pkt.^2,2)); 
-                                                                                                  
+                                            
+                                            % emg_rms_pkt = sqrt(mean(emg_diff_pkt.^2,2));  % commented on 9/14/2015
+                                        emg_rms_pkt = sqrt(mean(emg_diff_pkt.^2,2)) - emg_rms_baseline; 
+                                        
                                         % emg_prev_pkt = emg_new_pkt;
                                         % prev_emg_bp_filt_pkt = emg_bp_filt_pkt;
         %                                 prev_emg_abs_diff_pkt = emg_abs_diff_pkt;
@@ -932,42 +965,46 @@ function EEGTimer_Callback(timer_object,eventdata,hObject)
                                new_pkt = dataX00ms(:,1:pkt_size);                      % Select 64xN size of data packet i.e 2*N msec
                                dataX00ms = dataX00ms(:,pkt_size+1 : dims(2));          % Move all excess data to next data packet        
                               
-                               % High pass filter 0.1 Hz - commented 8/22/2015
-%                                for no_chns = 1:length(required_chnns)
-% %                                    hp_filt_pkt(required_chnns(no_chns),:) = pkt_hp_filter(new_pkt(required_chnns(no_chns),:),...
-% %                                        prev_pkt(required_chnns(no_chns),(pkt_size - filt_order)+1:pkt_size),...
-% %                                        prev_hp_filt_pkt(required_chnns(no_chns),(pkt_size - filt_order)+1:pkt_size),...
-% %                                        orig_Fs);
-%                                    
-%                                    % High pass filter using dfilt()
-%                                    hpf_df2sos.States = prev_hp_filt_pkt_3D(:,:,required_chnns(no_chns));
-%                                    hp_filt_pkt(required_chnns(no_chns),:) = filter(hpf_df2sos,new_pkt(required_chnns(no_chns),:));
-%                                    prev_hp_filt_pkt_3D(:,:,required_chnns(no_chns)) = hpf_df2sos.States;
-%                                end                            
+                               % High pass filter 0.1 Hz - commented 8/22/2015; uncommented on 9/8/2015
+                               for no_chns = 1:length(required_chnns)
+%                                    hp_filt_pkt(required_chnns(no_chns),:) = pkt_hp_filter(new_pkt(required_chnns(no_chns),:),...
+%                                        prev_pkt(required_chnns(no_chns),(pkt_size - filt_order)+1:pkt_size),...
+%                                        prev_hp_filt_pkt(required_chnns(no_chns),(pkt_size - filt_order)+1:pkt_size),...
+%                                        orig_Fs);
+                                   
+                                   % High pass filter using dfilt()
+                                   hpf_df2sos.States = prev_hp_filt_pkt_3D(:,:,required_chnns(no_chns));
+                                   hp_filt_pkt(required_chnns(no_chns),:) = filter(hpf_df2sos,new_pkt(required_chnns(no_chns),:));
+                                   prev_hp_filt_pkt_3D(:,:,required_chnns(no_chns)) = hpf_df2sos.States;
+                               end                            
                                
-                               % Band pass filter 0.1-1 Hz, 8/22/2015
-                               for no_chns = 1:length(required_chnns)                                 
-                                   eeg_bpf_df2sos.States = prev_eeg_bp_filt_pkt_3D(:,:,required_chnns(no_chns));
-                                   eeg_bp_filt_pkt(required_chnns(no_chns),:) = filter(eeg_bpf_df2sos,new_pkt(required_chnns(no_chns),:));
-                                   prev_eeg_bp_filt_pkt_3D(:,:,required_chnns(no_chns)) = eeg_bpf_df2sos.States;
-                               end             
+%                                % Band pass filter 0.1-1 Hz, 8/22/2015; commented on 9/8/2015
+%                                for no_chns = 1:length(required_chnns)                                 
+%                                    eeg_bpf_df2sos.States = prev_eeg_bp_filt_pkt_3D(:,:,required_chnns(no_chns));
+%                                    eeg_bp_filt_pkt(required_chnns(no_chns),:) = filter(eeg_bpf_df2sos,new_pkt(required_chnns(no_chns),:));
+%                                    prev_eeg_bp_filt_pkt_3D(:,:,required_chnns(no_chns)) = eeg_bpf_df2sos.States;
+%                                end             
+
+                                    % Low pass filter 1 Hz, prev_spatial_filt_pkt; commented 8/22/2015; uncommented on 9/8/2015
+                               for no_chns = 1:length(required_chnns)                                
+%                                    lp_filt_pkt(no_chns,:) = pkt_lp_filter(spatial_filt_pkt(classifier_channels(no_chns),:),...
+%                                        prev_spatial_filt_pkt(classifier_channels(no_chns),(pkt_size - filt_order)+1:pkt_size),...
+%                                        prev_lp_filt_pkt(no_chns,(pkt_size - filt_order)+1:pkt_size),...
+%                                        orig_Fs);
+                                        % Low pass filter using dfilt()
+                                        lpf_df2sos.States = prev_lp_filt_pkt_3D(:,:,required_chnns(no_chns));
+                                        %lp_filt_pkt(required_chnns(no_chns),:) = filter(lpf_df2sos,spatial_filt_pkt(required_chnns(no_chns),:)); % commented 9/8/2015
+                                        lp_filt_pkt(required_chnns(no_chns),:) = filter(lpf_df2sos,hp_filt_pkt(required_chnns(no_chns),:));
+                                        prev_lp_filt_pkt_3D(:,:,required_chnns(no_chns)) = lpf_df2sos.States;
+                               end
                                
                                % Re-reference the data                                                     
                                %spatial_filt_pkt = M_CAR*hp_filt_pkt;      % Common Average referencing  
-                               % spatial_filt_pkt = L_LAP*hp_filt_pkt;        % Large Laplacian filtering % commented 8/22/2015
-                               spatial_filt_pkt = L_LAP*eeg_bp_filt_pkt;
+                               spatial_filt_pkt = L_LAP*lp_filt_pkt;        % Large Laplacian filtering; uncommented on 9/8/2015
+                               %spatial_filt_pkt = L_LAP*eeg_bp_filt_pkt;   % commented 9/8/2015
+                               % spatial_filt_pkt = L_LAP*hp_filt_pkt; % commented 9/8/2015
                                                               
-                               % Low pass filter 1 Hz, prev_spatial_filt_pkt; commented 8/22/2015
-%                                for no_chns = 1:length(classifier_channels)                                
-% %                                    lp_filt_pkt(no_chns,:) = pkt_lp_filter(spatial_filt_pkt(classifier_channels(no_chns),:),...
-% %                                        prev_spatial_filt_pkt(classifier_channels(no_chns),(pkt_size - filt_order)+1:pkt_size),...
-% %                                        prev_lp_filt_pkt(no_chns,(pkt_size - filt_order)+1:pkt_size),...
-% %                                        orig_Fs);
-%                                         % Low pass filter using dfilt()
-%                                         lpf_df2sos.States = prev_lp_filt_pkt_3D(:,:,no_chns);
-%                                         lp_filt_pkt(no_chns,:) = filter(lpf_df2sos,spatial_filt_pkt(classifier_channels(no_chns),:));
-%                                         prev_lp_filt_pkt_3D(:,:,no_chns) = lpf_df2sos.States;
-%                                end
+                               
 
                                % Downsample data to 20 Hz
                                %Filtered_EEG_Downsamp = downsample(lp_filt_pkt',downsamp_factor)' - repmat(mean(baseline,2),1,window_size);
@@ -1026,19 +1063,21 @@ function EEGTimer_Callback(timer_object,eventdata,hObject)
                                                                 %ignore
                                                             end                                                  
                                                             disp('--->EEG GO');
-                                                            marker_block = [marker_block; [datahdr.block*datahdr.points,300]];      % Not completely accurate
+                                                            %marker_block = [marker_block; [datahdr.block*datahdr.points,300]];      % Not completely accurate
+                                                            marker_block = [marker_block; [((datahdr.block - 1)*datahdr.points + 1),300]];      % Added 8/24/2015
                                             end
 
                                             if handles.system.use_eeg_emg == 1 % If using both EEG and EMG control, then check if EMG activity is present
                                                 eeg_control = 1;
+                                                fwrite(handles.system.serial_interface.serial_object,[5]);                              % To generate trigger pulse from Exoskeleton to EEG system == 'S 64'   
                                                 % Start timer for resetting eeg_control, if
                                                 % it is already not running ~ Important
                                                 if strcmp(get(handles.reset_eeg_control_timer,'Running'),'off')
                                                     start(handles.reset_eeg_control_timer);
                                                 end
                                                 disp('--->EEG GO');
-                                                marker_block = [marker_block; [datahdr.block*datahdr.points,300]];      % Not completely accurate
-                                                fwrite(handles.system.serial_interface.serial_object,[5]);                              % To generate trigger pulse from Exoskeleton to EEG system == 'S 64'   
+                                                %marker_block = [marker_block; [datahdr.block*datahdr.points,300]];      % Not completely accurate
+                                                marker_block = [marker_block; [((datahdr.block - 1)*datahdr.points + 1),300]];      % Added 8/24/2015
                                             end
 
                                        end % endif
@@ -1050,7 +1089,7 @@ function EEGTimer_Callback(timer_object,eventdata,hObject)
                                        valid_move_cnt = 0;           
                                        fprintf('.');
                                        kcount = kcount+1; 
-                                       if kcount >= 15;
+                                       if kcount >= 30;
                                            kcount = 0;
                                            fprintf('\n');
                                        end
@@ -1073,9 +1112,8 @@ function EEGTimer_Callback(timer_object,eventdata,hObject)
 %                                 prev_emg_abs_diff_pkt = emg_abs_diff_pkt;
 %                                 prev_emg_mvc_pkt = emg_mvc_pkt;
                                 
-                                unprocessed_eeg = [unprocessed_eeg new_pkt];  
+                                % unprocessed_eeg = [unprocessed_eeg new_pkt];  % test_change 8/22/2015
                                 processed_eeg   = [processed_eeg Filtered_EEG_Downsamp];
-                                % unprocessed_eeg   = [unprocessed_eeg eeg_bp_filt_pkt]; % test_change 8/22/2015
                                 Overall_spatial_chan_avg = [Overall_spatial_chan_avg spatial_chan_avg];
                             end   % end if dims_pkt > pkt_size
 
@@ -1095,9 +1133,10 @@ function EEGTimer_Callback(timer_object,eventdata,hObject)
                                              % commented 4-9-15
                                             %fprintf(handles.user.testing_data.emg_decisions_fileID,'%6.3f \t %6.3f \t 1 \t %d \n',...
                                              %   emg_rms_pkt(1), emg_rms_pkt(2), strcmp(get(handles.reset_eeg_control_timer,'Running'),'on')); 
-                                            disp('--->EEG+EMG GO');
-                                            marker_block = [marker_block; [datahdr.block*datahdr.points,400]];
+                                            % marker_block = [marker_block; [datahdr.block*datahdr.points,400]];
+                                            marker_block = [marker_block; [((datahdr.block - 1)*datahdr.points + 1),400]];      % Added 8/24/2015
                                             eeg_control = 0;
+                                              disp('--->EEG+EMG GO');
                                    else
                                        disp('.');
                                         % commented 4-9-15
@@ -1364,14 +1403,14 @@ function checkbox_auto_save_data_Callback(hObject, eventdata, handles)
 function save_cloop_data(handles)
 % Save variables
 global processed_eeg processed_emg Overall_spatial_chan_avg all_feature_vectors GO_Probabilities
-global move_counts marker_block all_cloop_prob_threshold all_cloop_cnts_threshold
+global move_counts marker_block all_cloop_prob_threshold all_cloop_cnts_threshold emg_rms_baseline
 
 classifier_filename = handles.user.testing_data.classifier_filename;
 var_filename = [handles.user.testing_data.closeloop_folder_path handles.user.calibration_data.subject_initials...
                 '_ses' num2str(handles.user.testing_data.closeloop_sess_num) '_block' num2str(handles.user.testing_data.closeloop_block_num)...
-                '_closeloop_results.mat'];
+                '_closeloop_results_' datestr(clock,'mm-dd-yyyy_HH_MM_SS') '.mat'];
 save(var_filename,'classifier_filename','processed_eeg','processed_emg', 'Overall_spatial_chan_avg','all_feature_vectors','GO_Probabilities',...
-    'move_counts','marker_block','all_cloop_prob_threshold','all_cloop_cnts_threshold');
+    'move_counts','marker_block','all_cloop_prob_threshold','all_cloop_cnts_threshold','emg_rms_baseline');
 
 function [vidobj, capture_fig] = start_video_capture(handles) % Unused function 8-11-2015
     % Create a figure window. This example turns off the default

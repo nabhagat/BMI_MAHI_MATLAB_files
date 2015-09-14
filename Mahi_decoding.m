@@ -39,25 +39,29 @@
 %                  only used for visualizing grand-average MRCP
 % 1/27/15 - Calculate t-value for 95% confidence interval using the number
 %                    of trials 
+% 8/28/15 - Added option to import raw BrainVision files into EEGLAB
+% 8/29/15 - Changed move and rest epoch durations to [-3.5s to 2s]
 %--------------------------------------------------------------------------------------------------
 clear;
 %close all;
 %% Global variables 
 
-addpath(genpath('C:/NRI_BMI_Mahi_Project_files/Mahi_Rice_software'));
+% addpath(genpath('C:/NRI_BMI_Mahi_Project_files/Mahi_Rice_software'));
 
 myColors = ['r','b','k','m','y','c','m','g','r','b','k','b','r','m','g','r','b','k','y','c','m',...
     'g','r','b','k','y','c','m','g','r','b','k','b','r','m','g','r','b','k','y','c','m'];
 
 % EEG Channels used for identifying MRCP
-Channels_nos = [43, 9, 32, 10, 44, 13, 48, 14, 49, 15, 52, 19, ... 
-                53, 20, 54, 24, 57, 25, 58, 26, 4, 38, 5, 39, 6];    % 32 or 65 for FCz
+Channels_nos = [ 4, 38, 5, 39, 6,43, 9, 32, 10, 44, 13, 48, 14, 49, 15, 52, 19, ... 
+               53, 20, 54, 24, 57, 25, 58, 26];    % 32 or 65 for FCz
+
+ EMG_channel_nos = [17 22 41 42 45 46 51 55];
 
 % Subject Details 
-Subject_name = 'BNBO'; % change1
-Sess_num = '2';               
-closeloop_Sess_num = '7';     
-Cond_num = 3;  % 1 - Active; 2 - Passive; 3 - Triggered; 4 - Observation 
+Subject_name = 'S9007'; % change1
+Sess_num = '2';  % For calibration and classifier model             
+closeloop_Sess_num = '6';     
+Cond_num = 1;  % 1 - Active/User-driven; 2 - Passive; 3 - Triggered/User-triggered; 4 - Observation 
 Block_num = 160;
 
 folder_path = ['C:\NRI_BMI_Mahi_Project_files\All_Subjects\Subject_' Subject_name '\' Subject_name '_Session' num2str(Sess_num) '\']; % change2
@@ -71,14 +75,18 @@ use_GUI_for_testing = 1;    % always 1
 
 if train_classifier == 1
     disp('******************** Training Model **********************************');
+    readbv_files = 0;   % Added 8-28-2015
+    blocks_nos_to_import = [2 3 4 5];
     process_raw_eeg = 0;         % Also remove extra 'S  2' triggers
-    process_raw_emg = 0; extract_emg_epochs = 0;
+    process_raw_emg = 1; extract_emg_epochs = 0;
     extract_epochs = 0;     % extract move and rest epochs
   
     % Used during extracting epochs for removing corrupted epochs. The numbers of corrupted epochs 
     % must be known in advance. Otherwise declare remove_corrupted_epochs = [];
     
     remove_corrupted_epochs = []; %change5
+    remove_corrupted_epochs = [13 17 18 27 28 31 36 37 38 40 66 114 115 118 159]; % S9007_ses2_cond1_block160
+    
     %remove_corrupted_epochs = [ remove_corrupted_epochs 41 125 153]; %ERWS_ses2_cond3_block160
 
     %remove_corrupted_epochs = [ remove_corrupted_epochs 21 42 111 112 140 147]; %PLSH_ses2_cond1_block160
@@ -109,8 +117,8 @@ if train_classifier == 1
     %remove_corrupted_epochs = [21 22 50 60]; %MR_ses1_cond3
     %remove_corrupted_epochs = [49 50 61]; %MR_ses1_cond4
     
-    manipulate_epochs = 1;
-    plot_ERPs = 1;
+    manipulate_epochs = 0;
+    plot_ERPs = 0;
     label_events = 0;       % process kinematics and label the events/triggers
     use_kinematics_old_code = 0;    % Use old code for InMotion
     kin_blocks = [1 2 3 4;                % Session 1
@@ -133,7 +141,8 @@ elseif test_classifier == 1
     use_kinematics_old_code = 0;    % Use old code for InMotion
     extract_emg_epochs = 0;
     %standardize_data_flag = 0;
-    include_target_events = 0;      
+    include_target_events = 0;
+    readbv_files = 0;
 end
 % Pre-processing Flags
 %1. Spatial Filter Type
@@ -160,16 +169,16 @@ end
 %2. Filter cutoff frequency  
 hpfc = 0.1;     % HPF Cutoff frequency = 0.1 Hz    
 lpfc = 1;      % LPF Cutoff frequency = 1 Hz
-use_noncausal_filter = 0; % 1 - yes, use zero-phase filtfilt(); 0 - No, use filter()            %change6
+use_noncausal_filter = 0; %always 0; 1 - yes, use zero-phase filtfilt(); 0 - No, use filter()            %change6
 use_fir_filter = 0; % always 0
-use_band_pass = 1; %change7
+use_band_pass = 0; %always 0, because 4th order bandpass butterworth filter is unstable
 
 %3. Extracting epochs
 move_trig_label = 'S 16';  % 'S 32'; %'S  8'; %'100';
 rest_trig_label = 'S  2';  % 'S  2'; %'200';
 target_reached_trig_label = 'S  8';
-move_epoch_dur = [-7 1.6]; % [-4 12.1];
-rest_epoch_dur = [-3.5 1.6];
+move_epoch_dur = [-3.5 1.5]; % [-4 12.1];
+rest_epoch_dur = [-3.5 1.5];
 
 %4. Working with Epochs
 baseline_int = [-2.5 -2.25];   
@@ -182,6 +191,148 @@ train_SVM_classifier = 0;
 
 %6. Segment data for predicting kinematics
 segment_data_for_decoding_kinematics = 0;
+
+%7. Criteria for identifying MRCP channels
+rebound_rate_interval = [-2.5 1]; % Interval for calculating rebound rate
+interval = 0.5; % in seconds for calculating rebound rate
+%% Import raw BrainVision files (.eeg, .vhdr, .vmrk)  to EEGLAB dataset
+if readbv_files == 1
+    total_no_of_trials = 0;
+    EEG_dataset_to_merge = [];
+    EMG_dataset_to_merge = [];
+    
+    for block_index = 1:length(blocks_nos_to_import)
+        fprintf('\nImporting block # %d of %d blocks...\n',blocks_nos_to_import(block_index),length(blocks_nos_to_import));
+        
+        total_no_of_trials = total_no_of_trials + 20;
+       if blocks_nos_to_import(block_index) > 9
+            EEG = pop_loadbv(folder_path, [Subject_name '_ses' Sess_num '_cond' num2str(Cond_num) '_block00' num2str(blocks_nos_to_import(block_index)) '.vhdr'], [], 1:64);
+       else
+            EEG = pop_loadbv(folder_path, [Subject_name '_ses' Sess_num '_cond' num2str(Cond_num) '_block000' num2str(blocks_nos_to_import(block_index)) '.vhdr'], [], 1:64);
+       end
+
+        EEG.setname=[Subject_name '_ses' Sess_num '_cond' num2str(Cond_num) '_block' num2str(blocks_nos_to_import(block_index)) '_eeg_raw'];
+        EEG = eeg_checkset( EEG );
+        % Swap channel data to obtain correct electrode representation - 9/2/2015
+       if (strcmp(Subject_name,'S9007') && strcmp(Sess_num,'1'))
+           temp_EEG = EEG; 
+%            incorrect_nos = [57:64];
+%            correct_nos = [42 41 51 17 45 46 55 22];
+%            correct_labels = {'FT7','FT9','TP7','TP9','FT8','FT10','TP8','TP10'};
+%            correct_labels_for_incorrect_nos = {'P1','P2','P6','PO7','PO3','POz','PO4','PO8'};
+%            for i = 1:length(incorrect_nos)
+%                EEG.data(correct_nos(i),:) = temp_EEG_data(incorrect_nos(i),:);
+%                EEG.data(incorrect_nos(i),:) = temp_EEG_data(correct_nos(i),:);
+%                EEG.chanlocs(incorrect_nos(i)).labels = correct_labels{i};
+%            end
+           EEG.data(1:16,:) = temp_EEG.data(1:16,:);
+           for j = 1:16
+                EEG.chanlocs(j).labels = temp_EEG.chanlocs(j).labels;
+           end
+           EEG.data(17,:) = temp_EEG.data(60,:);
+           EEG.chanlocs(17).labels = 'TP9';
+           EEG.data(18:21,:) = temp_EEG.data(17:20,:);
+           for j = 18:21
+                EEG.chanlocs(j).labels = temp_EEG.chanlocs(j-1).labels;
+           end
+           EEG.data(22,:) = temp_EEG.data(64,:);
+           EEG.chanlocs(22).labels = 'TP10';
+           EEG.data(23:40,:) = temp_EEG.data(21:38,:);
+           for j = 23:40
+                EEG.chanlocs(j).labels = temp_EEG.chanlocs(j-2).labels;
+           end
+           EEG.data(41,:) = temp_EEG.data(58,:);
+           EEG.chanlocs(41).labels = 'FT9';
+           EEG.data(42,:) = temp_EEG.data(57,:);
+           EEG.chanlocs(42).labels = 'FT7';
+           EEG.data(43:44,:) = temp_EEG.data(39:40,:);
+           for j = 43:44
+                EEG.chanlocs(j).labels = temp_EEG.chanlocs(j-4).labels;
+           end
+           EEG.data(45,:) = temp_EEG.data(61,:);
+           EEG.chanlocs(45).labels = 'FT8';
+           EEG.data(46,:) = temp_EEG.data(62,:);
+           EEG.chanlocs(46).labels = 'FT10';
+           EEG.data(47:50,:) = temp_EEG.data(41:44,:);
+           for j = 47:50
+                EEG.chanlocs(j).labels = temp_EEG.chanlocs(j-6).labels;
+           end
+           EEG.data(51,:) = temp_EEG.data(59,:);
+           EEG.chanlocs(51).labels = 'TP7';
+           EEG.data(52:54,:) = temp_EEG.data(45:47,:);
+           for j = 52:54
+                EEG.chanlocs(j).labels = temp_EEG.chanlocs(j-7).labels;
+           end
+           EEG.data(55,:) = temp_EEG.data(63,:);
+           EEG.chanlocs(55).labels = 'TP8';
+           EEG.data(56:64,:) = temp_EEG.data(48:56,:);
+           for j = 56:64
+                EEG.chanlocs(j).labels = temp_EEG.chanlocs(j-8).labels;
+           end
+           
+       end           
+        EEG=pop_chanedit(EEG, 'lookup','C:\NRI_BMI_Mahi_Project_files\EEGLAB_13_1_1b\eeglab13_1_1b\plugins\dipfit2.2\standard_BESA\standard-10-5-cap385.elp');
+        EEG = eeg_checkset( EEG );
+        EEG = pop_saveset( EEG, 'filename',[Subject_name '_ses' num2str(Sess_num) '_cond' num2str(Cond_num) '_block' num2str(blocks_nos_to_import(block_index)) '_eeg_raw.set'],...
+            'filepath',folder_path);
+        EEG = eeg_checkset( EEG );
+        % Update EEGLAB window
+        [ALLEEG EEG CURRENTSET] = eeg_store(ALLEEG, EEG);
+        %    eeglab redraw;
+        EEG_dataset_to_merge = [EEG_dataset_to_merge CURRENTSET];
+
+        EEG = pop_select( EEG,'channel',EMG_channel_nos);
+        EEG.setname=[Subject_name '_ses' Sess_num '_cond' num2str(Cond_num) '_block' num2str(blocks_nos_to_import(block_index)) '_emg_raw'];
+        EEG = eeg_checkset( EEG );
+        EEG = pop_saveset( EEG, 'filename',[Subject_name '_ses' num2str(Sess_num) '_cond' num2str(Cond_num) '_block' num2str(blocks_nos_to_import(block_index)) '_emg_raw.set'],...
+            'filepath',folder_path);
+        EEG = eeg_checkset( EEG );
+        % Update EEGLAB window
+        [ALLEEG EEG CURRENTSET] = eeg_store(ALLEEG, EEG);
+        %    eeglab redraw;        
+        EMG_dataset_to_merge = [EMG_dataset_to_merge CURRENTSET];
+    end
+        
+    if ~isempty(EEG_dataset_to_merge)
+        fprintf('All block have been imported. Merging %d blocks...\n', length(EEG_dataset_to_merge));
+        if length(EEG_dataset_to_merge) == 1
+            % Retrive old data set - No need to merge 
+            [ALLEEG EEG CURRENTSET] = pop_newset(ALLEEG, EEG,CURRENTSET,'retrieve',EEG_dataset_to_merge,'study',0); 
+        else
+            EEG = pop_mergeset( ALLEEG,EEG_dataset_to_merge, 0);
+        end
+        EEG.setname=[Subject_name '_ses' Sess_num '_cond' num2str(Cond_num) '_block' num2str(total_no_of_trials) '_eeg_raw'];
+        EEG = eeg_checkset( EEG );
+        EEG = pop_saveset( EEG, 'filename',[Subject_name '_ses' num2str(Sess_num) '_cond' num2str(Cond_num) '_block' num2str(total_no_of_trials) '_eeg_raw.set'],'filepath',folder_path);
+        EEG = eeg_checkset( EEG );
+    else
+        errordlg('Error: EEG blocks could not be merged');
+    end
+    % Update EEGLAB window
+        [ALLEEG EEG CURRENTSET] = eeg_store(ALLEEG, EEG);
+    %    eeglab redraw;
+
+    if ~isempty(EMG_dataset_to_merge)
+        fprintf('All block have been imported. Merging %d blocks...\n', length(EMG_dataset_to_merge));
+        if length(EMG_dataset_to_merge) == 1
+            % Retrive old data set - No need to merge 
+            [ALLEEG EEG CURRENTSET] = pop_newset(ALLEEG, EEG,CURRENTSET,'retrieve',EMG_dataset_to_merge,'study',0); 
+        else
+            EEG = pop_mergeset( ALLEEG,EMG_dataset_to_merge, 0);
+        end
+        EEG.setname=[Subject_name '_ses' Sess_num '_cond' num2str(Cond_num) '_block' num2str(total_no_of_trials) '_emg_raw'];
+        EEG = eeg_checkset( EEG );
+        EEG = pop_saveset( EEG, 'filename',[Subject_name '_ses' num2str(Sess_num) '_cond' num2str(Cond_num) '_block' num2str(total_no_of_trials) '_emg_raw.set'],'filepath',folder_path);
+        EEG = eeg_checkset( EEG );
+    else
+        errordlg('Error: EMG blocks could not be merged');
+    end
+        
+
+    % Update EEGLAB window
+    [ALLEEG EEG CURRENTSET] = eeg_store(ALLEEG, EEG);
+    eeglab redraw;
+end
 %% Preprocessing of raw EEG signals
 % % Inputs - SB_raw.set
 % % Outputs - SB_preprocessed.set; SB_standardized.set
@@ -208,7 +359,6 @@ if process_raw_eeg == 1
     % ****STEP 1: Plot/Scroll Data in EEGLAB and manually remove noisy
     %         channels/segments of data.
 
-
     % Additional STEP: Perform ICA analysis and remove artifacts\
     % ICA commands - icaact(), icaproj(), runica()
     
@@ -227,13 +377,14 @@ if process_raw_eeg == 1
 %          'gridscale', 300, 'drawaxis', 'off', 'whitebk', 'off',...
 %          'conv','off');
 
+        
     % ****STEP 2: High Pass Filter data, 0.1 Hz, 4th order Butterworth
     if use_band_pass == 1
-            [b_bpf,a_bpf] = butter(2,([hpfc lpfc]./(raw_eeg_Fs/2)),'bandpass');
+            [b_bpf,a_bpf] = butter(4,([hpfc lpfc]./(raw_eeg_Fs/2)),'bandpass');
             SOS_bpf = tf2sos(b_bpf,a_bpf);
             bpf_df2sos = dfilt.df2sos(SOS_bpf);
             %bpf_df2sos.States = zeros(2,2);
-            bpf_df2sos.PersistentMemory = true;
+            bpf_df2sos.PersistentMemory = false;
             HPFred_eeg = zeros(size(raw_eeg));
 
             for i = 1:eeg_nbchns
@@ -251,7 +402,7 @@ if process_raw_eeg == 1
             else
                 [num_hpf,den_hpf] = butter(4,(hpfc/(raw_eeg_Fs/2)),'high');
             end
-            %eeg_hpf = dfilt.df2(num_hpf,den_hpf);       % Create filter object. Not essential  
+            %   eeg_hpf = dfilt.df2(num_hpf,den_hpf);       % Create filter object. Not essential  
             %   figure;
             %   freqz(num_hpf,den_hpf,512,raw_eeg_Fs); % Better to use fvtool
             %   fvtool(eeg_hpf,'Analysis','freq','Fs',raw_eeg_Fs);  % Essential to visualize frequency response properly.
@@ -276,8 +427,86 @@ if process_raw_eeg == 1
         %     end
     end
     
-    % ****STEP 3: Re-Reference data
-    SPFred_eeg = HPFred_eeg;
+    %     % ****STEP -: Re-Reference data
+    %     SPFred_eeg = HPFred_eeg;
+    %     
+    %     if common_avg_ref == 1
+    % %         %EEG = pop_reref( EEG, [],'exclude',[1 2 17]);       % Exclude HEOG, VEOG channels
+    % %         EEG = pop_reref( EEG, []);
+    % %         % EEG.setname='NB_CAR';
+    % %         EEG = eeg_checkset( EEG );
+    %         
+    % %         % Create Common Avg Ref matrix of size 64x64
+    % %         total_chnns = eeg_nbchns;
+    % %         num_car_channels = total_chnns - length(car_chnns_eliminate);          % Number of channels to use for CAR
+    % %         M_CAR =  (1/num_car_channels)*(diag((num_car_channels-1)*ones(total_chnns,1)) - (ones(total_chnns,total_chnns)-diag(ones(total_chnns,1))));
+    % %         
+    % %         if ~isempty(car_chnns_eliminate)
+    % %             for elim = 1:length(car_chnns_eliminate)
+    % %                 M_CAR(:,car_chnns_eliminate(elim)) = 0;
+    % %             end
+    % %         end
+    % %         
+    % %         SPFred_eeg = M_CAR*(SPFred_eeg);
+    % 
+    %     SPFred_eeg = spatial_filter(SPFred_eeg,'CAR',car_chnns_eliminate);
+    %     end 
+    %     if large_laplacian_ref == 1
+    % %         EEG = exp_eval(flt_laplace(EEG,4));
+    % %         EEG.ref = 'laplacian';
+    % %         EEG.setname = 'laplacian-ref';
+    % %         EEG = eeg_checkset( EEG );      
+    %     SPFred_eeg = spatial_filter(SPFred_eeg,'LLAP',[]);          
+    %     end 
+    %     if small_laplacian_ref == 1
+    %     SPFred_eeg = spatial_filter(SPFred_eeg,'SLAP',[]);    
+    %     end
+    %     if weighted_avg_ref == 1
+    %     SPFred_eeg = spatial_filter(SPFred_eeg,'WAVG',[]);
+    %     end
+        
+    % ****STEP 3: Low Pass Filter data, 1 Hz, 4th order Butterworth
+    if use_band_pass == 1
+        %LPFred_eeg = SPFred_eeg;
+        LPFred_eeg = HPFred_eeg;        % Added 9/4/2015
+    else
+        if use_fir_filter ==  1
+            num_lpf = fir_lp_filter;
+            den_lpf = 1;
+        else
+            [num_lpf,den_lpf] = butter(4,(lpfc/(raw_eeg_Fs/2)));        % IIR Filter
+        end
+        % num_lpf = fir1(100,(lpfc/(raw_eeg_Fs/2))); den_lpf = 1;       % FIR Filter, Hamming Window, 40th order  
+        %eeg_lpf = dfilt.df2(num_lpf,den_lpf);       % Create filter object. Not essential
+        %   figure;
+        %   freqz(num_lpf,den_lpf,512,raw_eeg_Fs);  % Better to use fvtool
+        %   fvtool: http://www.mathworks.com/help/signal/ref/fvtool.html#f7-1176930
+        % fvtool(eeg_lpf,'Analysis','freq','Fs',raw_eeg_Fs);  % Essential to visualize frequency response properly.
+        LPFred_eeg = zeros(size(HPFred_eeg));       
+        for i = 1:eeg_nbchns
+            %LPFred_eeg(i,:) = filtfilt(num_lpf,den_lpf,double(EEG.data(i,:)));
+            if use_noncausal_filter == 1
+                %LPFred_eeg(i,:) = filtfilt(eeg_lpf.sos.sosMatrix,eeg_lpf.sos.ScaleValues,double(SPFred_eeg(i,:))); % filtering with zero-phase delay
+                LPFred_eeg(i,:) = filtfilt(num_lpf,den_lpf,double(HPFred_eeg(i,:)));
+            else
+                %LPFred_eeg(i,:) = filter(num_lpf,den_lpf,double(SPFred_eeg(i,:))); % filtering with phase delay
+                LPFred_eeg(i,:) = filter(num_lpf,den_lpf,double(HPFred_eeg(i,:))); % filtering with phase delay
+            end
+        end
+        %      if use_fir_filter == 1
+        %         %correct for filter delay
+        %         grp_delay = 1000/2; 
+        %         LPFred_eeg(:,1:grp_delay) = [];
+        %      end
+    end
+    
+    
+  
+    
+    % Apply ICA here....9/6/2015
+    
+    % ****STEP 4: Re-Reference data
+    SPFred_eeg = LPFred_eeg;
     
     if common_avg_ref == 1
 %         %EEG = pop_reref( EEG, [],'exclude',[1 2 17]);       % Exclude HEOG, VEOG channels
@@ -313,45 +542,13 @@ if process_raw_eeg == 1
     if weighted_avg_ref == 1
     SPFred_eeg = spatial_filter(SPFred_eeg,'WAVG',[]);
     end
-        
-    % ****STEP 4: Low Pass Filter data, 1 Hz, 4th order Butterworth
-    if use_band_pass == 1
-        LPFred_eeg = SPFred_eeg;
-    else
-        if use_fir_filter ==  1
-            num_lpf = fir_lp_filter;
-            den_lpf = 1;
-        else
-            [num_lpf,den_lpf] = butter(4,(lpfc/(raw_eeg_Fs/2)));        % IIR Filter
-        end
-        % num_lpf = fir1(100,(lpfc/(raw_eeg_Fs/2))); den_lpf = 1;       % FIR Filter, Hamming Window, 40th order  
-        %eeg_lpf = dfilt.df2(num_lpf,den_lpf);       % Create filter object. Not essential
-        %   figure;
-        %   freqz(num_lpf,den_lpf,512,raw_eeg_Fs);  % Better to use fvtool
-        %   fvtool: http://www.mathworks.com/help/signal/ref/fvtool.html#f7-1176930
-        % fvtool(eeg_lpf,'Analysis','freq','Fs',raw_eeg_Fs);  % Essential to visualize frequency response properly.
-        LPFred_eeg = zeros(size(SPFred_eeg));
-        for i = 1:eeg_nbchns
-            %LPFred_eeg(i,:) = filtfilt(num_lpf,den_lpf,double(EEG.data(i,:)));
-            if use_noncausal_filter == 1
-                %LPFred_eeg(i,:) = filtfilt(eeg_lpf.sos.sosMatrix,eeg_lpf.sos.ScaleValues,double(SPFred_eeg(i,:))); % filtering with zero-phase delay
-                LPFred_eeg(i,:) = filtfilt(num_lpf,den_lpf,double(SPFred_eeg(i,:)));
-            else
-                LPFred_eeg(i,:) = filter(num_lpf,den_lpf,double(SPFred_eeg(i,:))); % filtering with phase delay
-            end
-        end
-        %      if use_fir_filter == 1
-        %         %correct for filter delay
-        %         grp_delay = 1000/2; 
-        %         LPFred_eeg(:,1:grp_delay) = [];
-        %      end
-    end
     
-    EEG.data = LPFred_eeg;      
+    % EEG.data = LPFred_eeg;
+    EEG.data = SPFred_eeg;  % Added 9/4/2015    
              
     % **** STEP 5: Resample to 100 Hz 
     %Preproc_eeg = decimate(LPFred_eeg,5);    
-    EEG = pop_resample( EEG, 200);
+    EEG = pop_resample(EEG, 200);
     EEG.setname=[Subject_name '_ses' num2str(Sess_num) '_preprocessed'];
     EEG = eeg_checkset( EEG );
     Fs_eeg = EEG.srate;           % Sampling rate after downsampling
@@ -361,7 +558,8 @@ if process_raw_eeg == 1
     deleted_rest_trig_latency = [];
     for j=1:length(EEG.event)-1
         if (strcmp(EEG.event(j).type,rest_trig_label))
-            if(strcmp(EEG.event(j+1).type,rest_trig_label))
+            %if(strcmp(EEG.event(j+1).type,rest_trig_label))
+            if(strcmp(EEG.event(j+1).type,'S 32'))      % Added 9-2-2015
                 EEG.event(j).type = 'DEL';
                 deleted_rest_trig_latency = [deleted_rest_trig_latency; EEG.event(j).latency/Fs_eeg];                               
             end
@@ -432,28 +630,30 @@ if process_raw_emg == 1
     
     myColors = ['r','b','k','m','y','c','m','g','r','b','k','b','r','m','g','r','b','k','y','c','m',...
     'g','r','b','k','y','c','m','g','r','b','k','b','r','m','g','r','b','k','y','c','m'];
-
+%%
     emg_Fs = EEG.srate;
     raw_emg = EEG.data;
     raw_emg_t = 0:1/emg_Fs: (length(raw_emg) - 1)/emg_Fs;
     
     emg_for_psd = raw_emg;
+    
+    use_noncausal_filter = 1;
     %emg_for_psd = Diff_emg(1,1:1e5);
 %     %Check PSD of raw emg signals
-    NFFT = 512; % Freq_Res = Fs/NFFT
-    PSD_emg = zeros(size(emg_for_psd,1),((NFFT/2)+1));
-    PSD_f = zeros(1,((NFFT/2)+1));
-    figure; 
-    hold on; grid on;
-    for psd_len = 1:size(emg_for_psd,1)
-        [PSD_emg(psd_len,:),PSD_f] = pwelch(detrend(emg_for_psd(psd_len,:)),[],[],NFFT,emg_Fs);   
-        plot(PSD_f(:),10*log10(PSD_emg(psd_len,:)),myColors(psd_len));
-        hold on;
-    end
-    xlabel('Frequency Hz');
-    ylabel('PSD dB');
-    title('Raw EMG Channels PSD');
-    hold off
+%     NFFT = 512; % Freq_Res = Fs/NFFT
+%     PSD_emg = zeros(size(emg_for_psd,1),((NFFT/2)+1));
+%     PSD_f = zeros(1,((NFFT/2)+1));
+%     figure; 
+%     hold on; grid on;
+%     for psd_len = 1:size(emg_for_psd,1)
+%         [PSD_emg(psd_len,:),PSD_f] = pwelch(detrend(emg_for_psd(psd_len,:)),[],[],NFFT,emg_Fs);   
+%         plot(PSD_f(:),10*log10(PSD_emg(psd_len,:)),myColors(psd_len));
+%         hold on;
+%     end
+%     xlabel('Frequency Hz');
+%     ylabel('PSD dB');
+%     title('Raw EMG Channels PSD');
+%     hold off
     
     %figure; pmtm(raw_emg(1,10000:18000),4,512,1000);
     
@@ -472,17 +672,43 @@ if process_raw_emg == 1
     % % freqz(num_bpf,den_bpf,512,emg_Fs); % Better to use fvtool
     % fvtool(emg_bpf,'Analysis','freq','Fs',emg_Fs);  % Essential to visualize frequency response properly.
     for i = 1:size(raw_emg,1)
-        BPFred_emg(i,:) = filtfilt(num_bpf,den_bpf,double(raw_emg(i,:)));
-        %BPFred_emg(i,:) = filtfilt(emg_bpf.sos.sosMatrix,emg_bpf.sos.ScaleValues,double(raw_emg(i,:)));
-        %notch_emg(i,:) = filtfilt(emg_notch.sos.sosMatrix,emg_notch.sos.ScaleValues,double(raw_emg(i,:)));
+         if use_noncausal_filter == 1
+            BPFred_emg(i,:) = filtfilt(num_bpf,den_bpf,double(raw_emg(i,:)));
+            %BPFred_emg(i,:) = filtfilt(emg_bpf.sos.sosMatrix,emg_bpf.sos.ScaleValues,double(raw_emg(i,:)));
+            %notch_emg(i,:) = filtfilt(emg_notch.sos.sosMatrix,emg_notch.sos.ScaleValues,double(raw_emg(i,:)));
+         else
+            BPFred_emg(i,:) = filter(num_bpf,den_bpf,double(raw_emg(i,:)));
+         end
     end
     
-    Diff_emg(1,:) = BPFred_emg(1,:) - BPFred_emg(3,:);
-    Diff_emg(2,:) = BPFred_emg(2,:) - BPFred_emg(4,:);
+    % Commented on 8-28-2015
+    % Diff_emg(1,:) = BPFred_emg(1,:) - BPFred_emg(3,:);
+    % Diff_emg(2,:) = BPFred_emg(2,:) - BPFred_emg(4,:);
+    
+    % Commented on 9-2-2015
+%     Diff_emg(1,:) = BPFred_emg(1,:) - BPFred_emg(2,:);      % Left Biceps
+%     Diff_emg(2,:) = BPFred_emg(3,:) - BPFred_emg(4,:);      % Left Triceps
+%     Diff_emg(3,:) = BPFred_emg(5,:) - BPFred_emg(6,:);      % Right Biceps
+%     Diff_emg(4,:) = BPFred_emg(7,:) - BPFred_emg(8,:);      % Right Triceps
+    
+    Diff_emg(1,:) = BPFred_emg(4,:) - BPFred_emg(3,:);      % Left Biceps
+    Diff_emg(2,:) = BPFred_emg(7,:) - BPFred_emg(1,:);      % Left Triceps
+    Diff_emg(3,:) = BPFred_emg(5,:) - BPFred_emg(6,:);      % Right Biceps
+    Diff_emg(4,:) = BPFred_emg(8,:) - BPFred_emg(2,:);      % Right Triceps
     
     emgt = 0:1/emg_Fs:(size(EEG.data,2)-1)/emg_Fs;
-    figure; plot(emgt, Diff_emg(1,:));
-    hold on; plot(emgt, Diff_emg(2,:),'r');
+%     figure; 
+%     subplot(2,1,1); 
+%     plot(emgt, Diff_emg(1,:),'b');
+%     hold on; plot(emgt, Diff_emg(2,:),'r');
+%     legend('L.biceps', 'L.triceps');
+%     title('Left hand');
+%     
+%     subplot(2,1,2); 
+%     plot(emgt, Diff_emg(3,:),'k');
+%     hold on; plot(emgt, Diff_emg(4,:),'g');
+%     legend('R.biceps', 'R.triceps');
+%     title('Right hand');
     
        
 %     % Apply notch filter
@@ -495,36 +721,49 @@ if process_raw_emg == 1
 %     end
       
     % ****STEP 2: Rectify & Lowpass Filter EMG Envelop, 2.2 Hz, 4th order Butterworth
-    emglpfc = 1;       % Cutoff frequency = 2.2 Hz
-    [num_lpf,den_lpf] = butter(4,(emglpfc/(emg_Fs/2)));
-    %emg_lpf = dfilt.df2(num_lpf,den_lpf);       % Create filter object. Not essential
-%   fvtool(emg_lpf,'Analysis','freq','Fs',emg_Fs);  % Essential to visualize frequency response properly.
-    EMG_envelop = abs(Diff_emg);
-    for k = 1:size(EMG_envelop,1)
-        EMG_envelop(k,:) = filtfilt(num_lpf,den_lpf,EMG_envelop(k,:));
-        %EMG_envelop(k,:) = filtfilt(emg_lpf.sos.sosMatrix,emg_lpf.sos.ScaleValues,EMG_envelop(k,:));
-    end
+%     emglpfc = 1;       % Cutoff frequency = 2.2 Hz
+%     [num_lpf,den_lpf] = butter(4,(emglpfc/(emg_Fs/2)));
+%     %emg_lpf = dfilt.df2(num_lpf,den_lpf);       % Create filter object. Not essential
+% %   fvtool(emg_lpf,'Analysis','freq','Fs',emg_Fs);  % Essential to visualize frequency response properly.
+%     EMG_envelop = abs(Diff_emg);
+%     for k = 1:size(EMG_envelop,1)
+%         EMG_envelop(k,:) = filtfilt(num_lpf,den_lpf,EMG_envelop(k,:));
+%         %EMG_envelop(k,:) = filtfilt(emg_lpf.sos.sosMatrix,emg_lpf.sos.ScaleValues,EMG_envelop(k,:));
+%     end
     
-     %**** STEP3: Calculate RMS using 500ms sliding window
+     %**** STEP3: Calculate RMS using 300ms sliding window
    EMG_rms(1,:) = sqrt(smooth(Diff_emg(1,:).^2,150));
    EMG_rms(2,:) = sqrt(smooth(Diff_emg(2,:).^2,150));
-   for k = 1:size(EMG_rms,1)
-        EMG_rms(k,:) = filtfilt(num_lpf,den_lpf,EMG_rms(k,:));
-        %EMG_envelop(k,:) = filtfilt(emg_lpf.sos.sosMatrix,emg_lpf.sos.ScaleValues,EMG_envelop(k,:));
-   end
-    
+   EMG_rms(3,:) = sqrt(smooth(Diff_emg(3,:).^2,150));
+   EMG_rms(4,:) = sqrt(smooth(Diff_emg(4,:).^2,150));
+   
+%    for k = 1:size(EMG_rms,1)
+%         EMG_rms(k,:) = filtfilt(num_lpf,den_lpf,EMG_rms(k,:));
+%         %EMG_envelop(k,:) = filtfilt(emg_lpf.sos.sosMatrix,emg_lpf.sos.ScaleValues,EMG_envelop(k,:));
+%    end
     figure; 
-    hold on;plot(emgt,EMG_envelop(1,:),'b');   
-    hold on; plot(emgt,EMG_envelop(2,:),'r');
-    hold on;plot(emgt,EMG_rms(1,:),'k');   
-    hold on; plot(emgt,EMG_rms(2,:),'g');
-    
+    subplot(2,1,1); 
+    plot(emgt, EMG_rms(1,:),'b');
+    hold on; plot(emgt, EMG_rms(2,:),'r');
+    legend('L.biceps', 'L.triceps');
+    title('Left hand (RMS)');
+
+    subplot(2,1,2); 
+    plot(emgt, EMG_rms(3,:),'k');
+    hold on; plot(emgt, EMG_rms(4,:),'g');
+    legend('R.biceps', 'R.triceps');
+    title('Right hand (RMS)');
+%% 
 %     EEG.data(1,:) = BPFred_emg(1,:);
 %     EEG.data(2,:) = BPFred_emg(2,:);
-    EEG.data(1,:) = EMG_envelop(1,:);
-    EEG.data(2,:) = EMG_envelop(2,:); 
-    EEG.data(3,:) = Diff_emg(1,:);
-    EEG.data(4,:) = Diff_emg(2,:);
+    EEG.data(1,:) = EMG_rms(1,:);
+    EEG.data(2,:) = EMG_rms(2,:); 
+    EEG.data(3,:) = EMG_rms(3,:);
+    EEG.data(4,:) = EMG_rms(4,:);
+    EEG.data(5,:) = Diff_emg(1,:);
+    EEG.data(6,:) = Diff_emg(2,:); 
+    EEG.data(7,:) = Diff_emg(3,:);
+    EEG.data(8,:) = Diff_emg(4,:);
     
     % **** STEP 5A: Remove extra stimulus triggers 'S  2'
     % Deletes 'S  2' trigger for trials which were aborted
@@ -724,7 +963,7 @@ if label_events == 1
                     continue;
                 else
                     %Redefine folder path
-                    folder_path = ['C:\NRI_BMI_Mahi_Project_files\All_Subjects\Subject_' Subject_name '\' Subject_name '_Session' num2str(Sess_num) '\']; % change8
+                    folder_path = ['C:\NRI_BMI_Mahi_Project_files\All_Subjects\Subject_' Subject_name '\' Subject_name '_Session' num2str(Sess_num) '\']; % change7
                     %kinematics_raw = importdata([Subject_name '_kinematics.mat']); % Raw data sampled at 200 Hz
                     kinematics_raw = dlmread([folder_path Subject_name '_ses' num2str(Sess_num) '_cond' num2str(Cond_num)...
                     '_block' num2str(kin_block_num) '_kinematics.txt'],'\t',14,1); % Raw data sampled at 200 Hz
@@ -1264,10 +1503,21 @@ if extract_epochs == 1
 %     if lpfc <= 1
 %         EEG = pop_resample( EEG, 10);
 %     end
+
+    % reject epochs by threshold
+%     test = pop_eegthresh(EEG,1,Channels_nos,-50,50,-2.5, 0.99,1,0)
+    % reject epochs manually by inspection
+    % size(EEG.data,2) - no. of frames
+%     eegplot(EEG.data(Channels_nos,:,:),'srate',EEG.srate,'limits', [EEG.xmin EEG.xmax]*1000,...
+%         'command','if ~isempty(TMPREJ), [remove_corrupted_epochs] = find(eegplot2trial(TMPREJ,size(EEG.data,2), EEG.trials, [], [])); end',...
+%         'eloc_file',EEG.chanlocs, 'winlength', 10, 'events',EEG.event); 
+    
     if ~isempty(remove_corrupted_epochs)
         reject_epochs = zeros(1,size(EEG.epoch,2));
         reject_epochs(remove_corrupted_epochs) = 1;
         EEG = pop_rejepoch(EEG,reject_epochs,1);
+    else
+        pop_eegplot(pop_select(EEG,'channel',Channels_nos(6:end)),1,1,0)
     end
 
     EEG.setname=[Subject_name '_ses' num2str(Sess_num) '_move_epochs'];
@@ -1524,17 +1774,15 @@ end
 %% Plot ERPs
 if plot_ERPs == 1
     paper_font_size = 10;
-    figure('Position',[1050 1300 3.5*116 2.5*116]); 
+    figure('Position',[100 100 3.5*116 2.5*116]); 
     %figure('units','normalized','outerposition',[0 0 1 1])
     T_plot = tight_subplot(numel(Channels_nos)/5,5,[0.01 0.01],[0.15 0.01],[0.1 0.1]);
     hold on;
     plot_ind4 = 1; % Index of plot where axis should appear
     
     % Added 8/21/2015
-    find_peak_interval = [-2.5 0.5];
-    mt1 = find(move_erp_time == find_peak_interval(1),1);
-    mt2 = find(move_erp_time == find_peak_interval(2),1);
-    interval = 1; % in seconds for calculating rebound rate
+    mt1 = find(move_erp_time == rebound_rate_interval(1),1);
+    mt2 = find(move_erp_time == rebound_rate_interval(2),1);
     rebound_rate = zeros(1,length(Channels_nos));
     Channels_criteria1 = [];
     Channels_criteria1_and_2 = [];
@@ -1552,24 +1800,24 @@ if plot_ERPs == 1
         
         % Added 8/21/2015
         [min_val,min_ind] = min(move_avg_channels(Channels_nos(ind4),mt1:mt2)); % Find negavtive peak of grand average MRCP
-        rebound_rate(ind4) = (move_avg_channels(Channels_nos(ind4),mt1+min_ind(1)+interval*Fs_eeg) - min_val)/interval;
+        %rebound_rate(ind4) = (move_avg_channels(Channels_nos(ind4),mt1+min_ind(1)+interval*Fs_eeg) - min_val)/interval;
                 
         % Criteria 1. Check whether negative peak is significantly not equal to 0
         % This is equivalent to checking if the 95% C.I. at negative peak contains 0 
         % if (move_avg_channels(Channels_nos(ind4),mt1+min_ind(1)) + (move_SE_channels(Channels_nos(ind4),mt1+min_ind(1))) < 0) 
         % Modified Criteria 1. Check whether negative peak is significantly less than 0
-        if ttest(move_epochs_with_base_correct(:,mt1+min_ind(1),Channels_nos(ind4)),0,'tail','left')
-            plot(0.75,-5,'*b','MarkerSize',10);
-            Channels_criteria1 = [Channels_criteria1 Channels_nos(ind4)];
-            if rebound_rate(ind4) >= 2.5 % Threshold
-                Channels_criteria1_and_2 = [Channels_criteria1_and_2 Channels_nos(ind4)];
-                plot(move_erp_time,move_avg_channels(Channels_nos(ind4),:),'r','LineWidth',1.5);
-            end
-        end
+% %         if ttest(move_epochs_with_base_correct(:,mt1+min_ind(1),Channels_nos(ind4)),0,'tail','left')
+% %             %plot(0.75,-5,'*b','MarkerSize',10);
+% %             Channels_criteria1 = [Channels_criteria1 Channels_nos(ind4)];
+% %             if rebound_rate(ind4) >= 2.5 % Threshold
+% %                 Channels_criteria1_and_2 = [Channels_criteria1_and_2 Channels_nos(ind4)];
+% %                 %plot(move_erp_time,move_avg_channels(Channels_nos(ind4),:),'r','LineWidth',1.5);
+% %             end
+% %         end
             
-        plot(rest_erp_time,rest_avg_channels(Channels_nos(ind4),:),'g','LineWidth',2);
-        plot(rest_erp_time,rest_avg_channels(Channels_nos(ind4),:)+ (rest_SE_channels(Channels_nos(ind4),:)),'-','Color',[0 1 0],'LineWidth',0.5);
-        plot(rest_erp_time,rest_avg_channels(Channels_nos(ind4),:) - (rest_SE_channels(Channels_nos(ind4),:)),'-','Color',[0 1 0],'LineWidth',0.5);
+%         plot(rest_erp_time,rest_avg_channels(Channels_nos(ind4),:),'b','LineWidth',2);
+%         plot(rest_erp_time,rest_avg_channels(Channels_nos(ind4),:)+ (rest_SE_channels(Channels_nos(ind4),:)),'-','Color',[0 0 1],'LineWidth',0.5);
+%         plot(rest_erp_time,rest_avg_channels(Channels_nos(ind4),:) - (rest_SE_channels(Channels_nos(ind4),:)),'-','Color',[0 0 1],'LineWidth',0.5);
 %         
 %         jbfill(move_erp_time,move_avg_channels(Channels_nos(ind4),:)+ (move_SE_channels(Channels_nos(ind4),:)),...
 %            move_avg_channels(Channels_nos(ind4),:)- (move_SE_channels(Channels_nos(ind4),:)),[1 1 1],'k',0,0.3);
@@ -1580,7 +1828,7 @@ if plot_ERPs == 1
         %plot(erp_time,move_avg_channels(Channels_nos(RPind),:),rest_time, rest_avg_channels(Channels_nos(RPind),:),'r','LineWidth',2);
         %plot(erp_time,preprocessed_move_epochs(Channels_nos(RPind),:),'b',erp_time,standardize_move_epochs(Channels_nos(RPind),:),'k',erp_time,rest_avg_channels(Channels_nos(RPind),:),'r','LineWidth',2);
         %plot(erp_time,move_avg_channels(Channels_nos(RPind),:),'r','LineWidth',2);
-        text(-2,-5,[EEG.chanlocs(Channels_nos(ind4)).labels],'Color','k','FontWeight','normal','FontSize',paper_font_size-1); % ', ' num2str(Channels_nos(ind4))
+        text(-2,-5,[EEG.chanlocs(Channels_nos(ind4)).labels ',' int2str(Channels_nos(ind4))],'Color','k','FontWeight','normal','FontSize',paper_font_size-1); % ', ' num2str(Channels_nos(ind4))
         set(gca,'YDir','reverse');
         %if max(abs(move_avg_channels(Channels_nos(RPind),:))) <= 6
 %          if max((move_avg_channels(Channels_nos(ind4),:)+(move_SE_channels(Channels_nos(ind4),:)))) >= 6 || ...
@@ -1591,23 +1839,26 @@ if plot_ERPs == 1
 %             set(gca,'YTick',[-10 0 10]);
 %             set(gca,'YTickLabel',{'-10'; '0'; '10'});
 %         else
-            axis([-2.5 1 -6 3]);
+            axis([-2.5 1 -10 5]);
             %axis([move_erp_time(1) 1 -15 15]);
-            set(gca,'YTick',[-5 0 2]);
-            set(gca,'YTickLabel',{'-5'; '0'; '+2'},'FontWeight','normal','FontSize',paper_font_size-1);
+            % set(gca,'YTick',[-5 0 2]);                                                                                                                                            % uncomment for publication figure
+            % set(gca,'YTickLabel',{'-5'; '0'; '+2'},'FontWeight','normal','FontSize',paper_font_size-1);                        % uncomment for publication figure
 %        end
-        line([0 0],[-10 10],'Color','k','LineWidth',0.5,'LineStyle','--');  
-        line([-2.5 1.5],[0 0],'Color','k','LineWidth',0.5,'LineStyle','--');  
+        line([0 0],[-30 20],'Color','k','LineWidth',0.5,'LineStyle','--');  
+        line([-2.5 4],[0 0],'Color','k','LineWidth',0.5,'LineStyle','--');  
         plot_ind4 = plot_ind4 + 1;
+        grid on;
         
         if ind4 == 6
-            set(gca,'XColor',[1 1 1],'YColor',[1 1 1])
-            set(gca,'YtickLabel',' ');
+            % set(gca,'XColor',[1 1 1],'YColor',[1 1 1])          % uncomment for publication figure
+            % set(gca,'YtickLabel',' ');
+             set(gca,'YTick',[-20 -10 0 10]);                                                                                                                                            % comment for publication figure
+            set(gca,'YTickLabel',{'-20';'-10'; '0'; '+10'},'FontWeight','normal','FontSize',paper_font_size-1);                        % comment for publication figure
              hylab = ylabel('MRCP Grand Average','FontSize',paper_font_size-1,'Color',[0 0 0]);
              pos_hylab = get(hylab,'Position');
              set(hylab,'Position',[pos_hylab(1) pos_hylab(2) pos_hylab(3)]);
         else
-            set(gca,'Visible','off');
+            set(gca,'Visible','on');        % change to 'off' for publication figure
         end
         
     %    grid on;
@@ -1624,10 +1875,10 @@ if plot_ERPs == 1
     %subplot(5,5,8);
    
     
-    axes(T_plot(11));
+    axes(T_plot(6));
     set(gca,'Visible','on');
     bgcolor = get(gcf,'Color');
-    set(gca,'YColor',[1 1 1]);
+    set(gca,'YColor',[0 0 0]);
     set(gca,'XTick',[-2 0 1]);
     set(gca,'XTickLabel',{'-2'; 'MO';'1'},'FontSize',paper_font_size-1);  
     set(gca,'TickLength',[0.03 0.025])
@@ -1658,15 +1909,15 @@ if plot_ERPs == 1
 %     hgexport(fig,'-clipboard',style,'applystyle', true);
 %     drawnow;
     
-    response = input('Save figure to folder [y/n]: ','s');
-    if strcmp(response,'y')
-         %tiff_filename = ['C:\NRI_BMI_Mahi_Project_files\Figures_for_paper\' Subject_name '_ses' num2str(Sess_num) '_cond' num2str(Cond_num) '_block' num2str(Block_num) '_MRCP_grand_average.tif'];
-         %fig_filename = ['C:\NRI_BMI_Mahi_Project_files\Figures_for_paper\' Subject_name '_ses' num2str(Sess_num) '_cond' num2str(Cond_num) '_block' num2str(Block_num) '_MRCP_grand_average.fig'];
-        %print('-dtiff', '-r300', tiff_filename); 
-        %saveas(gcf,fig_filename);
-    else
-        disp('Save figure aborted');
-    end
+%     response = input('Save figure to folder [y/n]: ','s');
+%     if strcmp(response,'y')
+%          %tiff_filename = ['C:\NRI_BMI_Mahi_Project_files\Figures_for_paper\' Subject_name '_ses' num2str(Sess_num) '_cond' num2str(Cond_num) '_block' num2str(Block_num) '_MRCP_grand_average.tif'];
+%          %fig_filename = ['C:\NRI_BMI_Mahi_Project_files\Figures_for_paper\' Subject_name '_ses' num2str(Sess_num) '_cond' num2str(Cond_num) '_block' num2str(Block_num) '_MRCP_grand_average.fig'];
+%         %print('-dtiff', '-r300', tiff_filename); 
+%         %saveas(gcf,fig_filename);
+%     else
+%         disp('Save figure aborted');
+%     end
     
     %% ERP image plots
 %     mt1 = 101;  
@@ -1678,7 +1929,7 @@ if plot_ERPs == 1
 %     eeglab redraw;
     
     %Channels_nos = [9 32 10 44 48 14 49 15 19 53 20 54];
-    ra1 = [-8 8];
+    ra1 = [-10 10];
     figure;
     T_plot = tight_subplot(numel(Channels_nos)/5,5,0.05,[0.1 0.1],[0.1 0.1]);
     for ind4 = 1:length(Channels_nos)
@@ -1694,7 +1945,7 @@ if plot_ERPs == 1
     set(gca,'XTickLabel',{'-2'; '-1'; '0';'1';'2';'3'});  
     %export_fig MS_ses1_cond1_block80_ERP '-png' '-transparent';
     %print -dtiff -r450 LSGR_cond3_erp.tif
-   %mtit([Subject_name ', Backdrive Mode, Day 1 & 2'],'fontsize',14,'yoff',0.025);
+    %mtit([Subject_name ', Backdrive Mode, Day 1 & 2'],'fontsize',14,'yoff',0.025);
     
     %% Comparing plots
 % %     % mychanns = [9;10;48;14;49];
@@ -1752,7 +2003,7 @@ if manipulate_epochs == 1
    Average.rest_mean_baseline = rest_mean_baseline;   
    Average.rest_erp_time = rest_erp_time;
    Average.remove_corrupted_epochs = remove_corrupted_epochs;
-   
+   disp('Suggested RP channels = '); disp(Channels_criteria1_and_2);
    Average.RP_chans = input('Enter channel numbers where RP is seen. Example - [1 2 3 4]: ');
 
    file_identifier = [];
@@ -1928,13 +2179,13 @@ if test_classifier == 1
     
     % set and open serial port
     %obj = serial('com1','baudrate',115200,'parity','none','databits',8,'stopbits',1);   %  InMotion
-    obj = serial('COM3','baudrate',19200,'parity','none','databits',8,'stopbits',1);      %   Mahi               % change9
+    exo_obj = serial('COM3','baudrate',19200,'parity','none','databits',8,'stopbits',1);      %   Mahi               % change8
     video_record_obj = serial('COM1','baudrate',19200,'parity','none','databits',8,'stopbits',1);
     
     try
-        fopen(obj);
+        fopen(exo_obj);
     catch obj_error 
-       obj = -1;
+       exo_obj = -1;
        warndlg('Exo com port was Not FOUND!!, program will continue without serial access...');
     end
     
@@ -1958,14 +2209,14 @@ if test_classifier == 1
         user.testing_data.closeloop_block_num = 0;
         user.testing_data.closeloop_folder_path = closeloop_folder_path;
       
-    [Proc_EEG,Ovr_Spatial_Avg,All_Feature_Vec,GO_Prob,Num_Move_Counts,Markers,all_cloop_prob_threshold, all_cloop_cnts_threshold,Proc_EMG,Unproc_EEG] ...
-        = BMI_Mahi_Closeloop_GUI(user,obj,video_record_obj);
+    [Proc_EEG,Ovr_Spatial_Avg,All_Feature_Vec,GO_Prob,Num_Move_Counts,Markers,all_cloop_prob_threshold, all_cloop_cnts_threshold,Proc_EMG,emg_rms_baseline] ...
+        = BMI_Mahi_Closeloop_GUI(user,exo_obj,video_record_obj);
     
     else        
         % use script
         filename2 = [folder_path Subject_name '_ses' num2str(Sess_num) '_cond' num2str(Cond_num) '_block80_performance_optimized_causal.mat'];
         load(filename2);    
-        [Proc_EEG,Ovr_Spatial_Avg,All_Feature_Vec,GO_Prob,Num_Move_Counts,Markers,cloop_prob_threshold, cloop_cnts_threshold] = BMI_Mahi_Closeloop(Performance,obj);
+        [Proc_EEG,Ovr_Spatial_Avg,All_Feature_Vec,GO_Prob,Num_Move_Counts,Markers,cloop_prob_threshold, cloop_cnts_threshold] = BMI_Mahi_Closeloop(Performance,exo_obj);
         all_cloop_prob_threshold = cloop_prob_threshold.*ones(1,length(All_Feature_Vec));
         all_cloop_cnts_threshold = cloop_cnts_threshold.*ones(1,length(All_Feature_Vec));
 
@@ -1975,10 +2226,10 @@ if test_classifier == 1
         save(var_filename,'Proc_EEG','Proc_EMG','Ovr_Spatial_Avg','All_Feature_Vec','GO_Prob','Num_Move_Counts','Markers','cloop_prob_threshold','cloop_cnts_threshold');
     end
        
-     if obj ~= -1
+     if exo_obj ~= -1
         % clear serial port
-       fclose(obj);
-       delete(obj);
+       fclose(exo_obj);
+       delete(exo_obj);
        clear('obj');
      end
      

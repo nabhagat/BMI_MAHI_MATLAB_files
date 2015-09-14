@@ -22,14 +22,14 @@ clear;
 myColors = ['g','r','m','k','y','c','m','g','r','b','k','b','r','m','g','r','b','k','y','c','m',...
     'g','r','b','k','y','c','m','g','r','b','k','b','r','m','g','r','b','k','y','c','m'];
 
-% Subject Details - change10
-Subject_name = 'PLSH';
+% Subject Details - change9
+Subject_name = 'S9007';
 Sess_num = '2';
-Cond_num = 3;  % 1 - Active; 2 - Passive; 3 - Triggered; 4 - Observation 
+Cond_num = 1;  % 1 - Active; 2 - Passive; 3 - Triggered; 4 - Observation 
 Block_num = 160;
 
-folder_path = ['C:\NRI_BMI_Mahi_Project_files\All_Subjects\Subject_' Subject_name '\' Subject_name '_Session' num2str(Sess_num) '\']; % change11
-load([folder_path Subject_name '_ses' num2str(Sess_num) '_cond' num2str(Cond_num) '_block' num2str(Block_num) '_average_causal_bpf.mat']);      % Always use causal for training classifier
+folder_path = ['C:\NRI_BMI_Mahi_Project_files\All_Subjects\Subject_' Subject_name '\' Subject_name '_Session' num2str(Sess_num) '\']; % change10
+load([folder_path Subject_name '_ses' num2str(Sess_num) '_cond' num2str(Cond_num) '_block' num2str(Block_num) '_average_causal.mat']);      % Always use causal for training classifier
 
 % Flags to control the Classifier Training
 %-. Use separate move and rest epochs? (Always yes). 0 - No; 1 - yes
@@ -82,9 +82,9 @@ downsamp_factor = Average.Fs_eeg/Fs_eeg;
     end
 
 %0. Use previously trained models? Ex: CVO, smart_features, etc. 
-use_previous_models = 1;    % change12
+use_previous_models = 0;    % change11
 regular_or_chance_level_classifier = 1; % 0 - chance_level; 1 - Regular classifier design
-use_conventional_features = 1;              % change13                              
+use_conventional_features = 1;              % change12                              
 use_smart_features = 1;
 
 if use_previous_models == 1
@@ -105,11 +105,15 @@ if use_previous_models == 1
 end
     
 %1. Classifier Channels
+use_channel_optimization = 1;       % change14
 if use_previous_models == 1
     classchannels = prev_Performance.classchannels;
+     % classchannels = Average.RP_chans; %test_change
+     % classchannels = [32 13 48 14 49 19];
 else
-    classchannels = Average.RP_chans(1:4); % Needs to be optimized
-    %classchannels = [14 9 48];
+    %classchannels = Average.RP_chans(1:4); % Needs to be optimized
+    classchannels = Average.RP_chans;           % Automatic channel selection
+    % classchannels = [32 14 49 52 54];         % Manual channel selection
 end
 
 % Added for MRMR algorithm - 7/27/2015, 8/19/2015
@@ -169,7 +173,9 @@ end
 if regular_or_chance_level_classifier == 1
        
 %5. Window Length Optimization Loop Starts -----------------------------    
-window_length_range = [10:20]; %round(0.6*Fs_eeg); %[1:17];     % change14
+window_length_range = [10:20]; %round(0.6*Fs_eeg); %[1:17];     % change13
+%window_length_range = 10; %test_change
+optimized_channels = cell(length(window_length_range),1);
 
 for wl = 1:length(window_length_range) 
 % Initialize variables
@@ -181,7 +187,8 @@ for wl = 1:length(window_length_range)
     conv_Mu_move = []; conv_Cov_Mat = [];
     bad_move_trials = []; 
     good_move_trials = [];
-      
+    AUC_move = [];
+    AUC_rest = [];
     
     window_length = window_length_range(wl);    %  = (window_length/20) seconds 
     %window_length = (move_window(2) - move_window(1))*Fs_eeg; % 5*100 = 500 msec 
@@ -270,46 +277,55 @@ smart_rest_ch_avg = [];
 rest_ch_avg_time = [];
 
 % Comment block open ---- 8/19/2015
-% old_classchannels = classchannels;
-% % Different combinations of eeg channels  - 7/27/2015
-% % total_no_combs = 0;           % commented 8/19/2015
-% % for i = 4:length(Average.RP_chans)
-% %     total_no_combs = total_no_combs + nchoosek(length(Average.RP_chans),i);
-% % end
-% total_no_combs = 25; % added 8/19/2015
-% Channel_comb_matrix = zeros(total_no_combs,length(Average.RP_chans));
-% Mahalanobis_comb_matrix = zeros(total_no_combs,2*no_epochs);
-% Slope_comb_matrix = zeros(total_no_combs,2*no_epochs);
-% Area_comb_matrix = zeros(total_no_combs,2*no_epochs);
-% Peak_comb_matrix = zeros(total_no_combs,2*no_epochs);
-% 
-% first_elm = 1;
-% last_elm = 0;
-% % for no_chans = 4:length(Average.RP_chans) 
-% %     % generate combinations - commented 8/19/2015
-% %     chans_combn = nchoosek(Average.RP_chans,no_chans);
-% %     last_elm = first_elm + size(chans_combn,1) - 1;
-% %     Channel_comb_matrix(first_elm:last_elm,1:size(chans_combn,2)) = chans_combn;
-% %     first_elm = last_elm + 1; 
-% % end
-% Channel_comb_matrix(:,1) = Average.RP_chans';   % added 8/19/2015
-% 
-%     for comb = 1:size(Channel_comb_matrix,1)
-%          Smart_Features = [];
-%          smart_Mu_move = []; smart_Cov_Mat = [];
-%          conv_Mu_move = []; conv_Cov_Mat = [];
-%          bad_move_trials = []; 
-%          good_move_trials = [];
-%          
-%         classchannels = Channel_comb_matrix(comb,:);
-%         classchannels = classchannels(classchannels~=0);
+% % old_classchannels = classchannels;
+% % % Different combinations of eeg channels  - 7/27/2015
+% % % total_no_combs = 0;           % commented 8/19/2015
+% % % for i = 4:length(Average.RP_chans)
+% % %     total_no_combs = total_no_combs + nchoosek(length(Average.RP_chans),i);
+% % % end
+% % total_no_combs = 25; % added 8/19/2015
+% % Channel_comb_matrix = zeros(total_no_combs,length(Average.RP_chans));
+% % Mahalanobis_comb_matrix = zeros(total_no_combs,2*no_epochs);
+% % Slope_comb_matrix = zeros(total_no_combs,2*no_epochs);
+% % Area_comb_matrix = zeros(total_no_combs,2*no_epochs);
+% % Peak_comb_matrix = zeros(total_no_combs,2*no_epochs);
+% % 
+% % first_elm = 1;
+% % last_elm = 0;
+% % % for no_chans = 4:length(Average.RP_chans) 
+% % %     % generate combinations - commented 8/19/2015
+% % %     chans_combn = nchoosek(Average.RP_chans,no_chans);
+% % %     last_elm = first_elm + size(chans_combn,1) - 1;
+% % %     Channel_comb_matrix(first_elm:last_elm,1:size(chans_combn,2)) = chans_combn;
+% % %     first_elm = last_elm + 1; 
+% % % end
+% % Channel_comb_matrix(:,1) = Average.RP_chans';   % added 8/19/2015
+% % 
+% %     for comb = 1:size(Channel_comb_matrix,1)
+% %          Smart_Features = [];
+% %          smart_Mu_move = []; smart_Cov_Mat = [];
+% %          conv_Mu_move = []; conv_Cov_Mat = [];
+% %          bad_move_trials = []; 
+% %          good_move_trials = [];
+% %          
+% %         classchannels = Channel_comb_matrix(comb,:);
+% %         classchannels = classchannels(classchannels~=0);
 % Comment block close ---- 8/19/2015
-
-    move_ch_avg_ini = mean(move_epochs_s(:,:,classchannels),3);
-    rest_ch_avg_ini = mean(rest_epochs_s(:,:,classchannels),3);
 
     mt1 = find(move_erp_time == find_peak_interval(1));
     mt2 = find(move_erp_time == find_peak_interval(2));
+    if use_channel_optimization == 1
+        [optimized_channels,rejected_channel_pool,prev_MI]  = ...
+            optimized_channel_selection_backward(classchannels,move_epochs_s,rest_epochs_s,move_erp_time,rest_erp_time,...
+                                                                                        find_peak_interval,reject_trial_before, keep_bad_trials, window_length,rest_window);        %test_change
+
+        move_ch_avg_ini = mean(move_epochs_s(:,:,optimized_channels),3);
+        rest_ch_avg_ini = mean(rest_epochs_s(:,:,optimized_channels),3);
+    else
+        move_ch_avg_ini = mean(move_epochs_s(:,:,classchannels),3);
+        rest_ch_avg_ini = mean(rest_epochs_s(:,:,classchannels),3);
+    end
+        
     [min_avg(:,1),min_avg(:,2)] = min(move_ch_avg_ini(:,mt1:mt2),[],2); % value, indices
 
     for nt = 1:size(move_ch_avg_ini,1)
@@ -343,8 +359,8 @@ rest_ch_avg_time = [];
 
         if keep_bad_trials == 1
             good_move_trials = 1:size(move_epochs_s,1);
-            good_trials_move_ch_avg = move_ch_avg(good_move_trials,:);
-            good_trials_rest_ch_avg = rest_ch_avg(good_move_trials,:);
+            good_trials_move_ch_avg = move_ch_avg_ini(good_move_trials,:);
+            good_trials_rest_ch_avg = rest_ch_avg_ini(good_move_trials,:);
         else
             % Else remove bad trials from Conventional Features, move_ch_avg and
             % rest_ch_avg
@@ -734,6 +750,7 @@ end
     end % end use_feature for loop   
     
 % Save all optimization variables
+All_optimized_channels{wl} = optimized_channels;
 All_move_window(wl,:) = move_window;        % Only for Conventional Feature
 All_rest_window(wl,:) = rest_window;        % Same for Conventional and Smart Feature
 All_good_move_trials{wl} = good_move_trials;
@@ -1048,6 +1065,7 @@ if use_svm_classifier == 1
     Performance.keep_bad_trials = keep_bad_trials;
     Performance.use_shifting_window_CV = use_shifting_window_CV;
     Performance.apply_scaling_for_SVM = apply_scaling_for_SVM;
+    Performance.use_channel_optimization = use_channel_optimization;
 
     % Variables
     Performance.classchannels = classchannels;
@@ -1082,6 +1100,7 @@ if use_svm_classifier == 1
             Performance.eeg_sensitivity = All_eeg_sensitivity{smart_opt_wl_ind}(2,:);
             Performance.eeg_specificity = All_eeg_specificity{smart_opt_wl_ind}(2,:);
             Performance.eeg_accur = All_eeg_accur{smart_opt_wl_ind}(2,:);
+            Performance.optimized_channels = All_optimized_channels{smart_opt_wl_ind};  %test_change
     end
 
     % All variables used during optimization
@@ -1114,7 +1133,8 @@ if use_svm_classifier == 1
     Performance.All_eeg_sensitivity = All_eeg_sensitivity;
     Performance.All_eeg_specificity = All_eeg_specificity;
     Performance.All_eeg_accur = All_eeg_accur;
-
+    Performance.All_optimized_channels = All_optimized_channels;  %test_change
+    
     % Miscellaneous
     %Performance.test_trials_time = test_trials_time;
     %Performance.test_trial_signal_time =  test_trial_signal_time;
@@ -1131,8 +1151,11 @@ if use_svm_classifier == 1
     % else
     %     file_identifier = [ file_identifier '_offline'];
     % end
+    if use_channel_optimization == 0
+        file_identifier = [ file_identifier '_manual'];
+    end
 
-    filename2 = [folder_path Subject_name '_ses' num2str(Sess_num) '_cond' num2str(Cond_num) '_block' num2str(Block_num) '_performance_optimized' file_identifier '_bpf.mat']; %datestr(now,'dd_mm_yy_HHMM')
+    filename2 = [folder_path Subject_name '_ses' num2str(Sess_num) '_cond' num2str(Cond_num) '_block' num2str(Block_num) '_performance_optimized' file_identifier '_09072015.mat']; %datestr(now,'dd_mm_yy_HHMM')
     save(filename2,'Performance');   
 end
 
@@ -1238,7 +1261,7 @@ end
             h = boxplot([online_fixed' online_variable' online_variable_old'] ,'labels',group_names,'widths',0.5);
              set(h,'LineWidth',2);
             v = axis;
-            axis([v(1) v(2) 0 100]);
+            axis([v(1) v(2) 0 110]);
             ylabel('Classification Accuracy (%)','FontSize',12);
             title([Subject_name ', Mode ' num2str(Cond_num)],'FontSize',12);
 
@@ -1267,7 +1290,43 @@ end
                 p_values = [p_values NaN];
             end
             sigstar({[1 2],[2 3]},p_values);
-        end         
+        else
+            figure; 
+            group_names = {'Fixed','Variable'};
+            online_variable = Performance.All_eeg_accur{Performance.smart_opt_wl_ind}(2,:);
+            if use_conventional_features == 1
+                online_fixed = Performance.All_eeg_accur{Performance.conv_opt_wl_ind}(1,:);
+            else
+                online_fixed = zeros(size(online_variable));
+            end
+            
+            h = boxplot([online_fixed' online_variable'] ,'labels',group_names,'widths',0.5);
+             set(h,'LineWidth',2);
+            v = axis;
+            axis([v(1) v(2) 0 110]);
+            ylabel('Classification Accuracy (%)','FontSize',12);
+            title([Subject_name ', Mode ' num2str(Cond_num)],'FontSize',12);
+
+            %export_fig 'TA_ses1_cond3_smart_conv_comparison' '-png' '-transparent'
+
+            % if use_shifting_window_CV == 1
+            %     title('Online Simulation','FontSize',12);
+            %     %mtit('Online Simulation','fontsize',12,'color',[0 0 1],'xoff',0,'yoff',-1.15);
+            % else
+            %     title('Offline Validation','FontSize',12);
+            %     %mtit('Offline Validation','fontsize',12,'color',[0 0 1],'xoff',0,'yoff',-1.15);
+            % end
+
+            p_values = [];
+            % both-tailed Wilcoxon Rank sum Test, i.e. median(day 4) >< median(day 5)
+            [pwilcoxon,h,stats] = ranksum(online_variable,online_fixed,'alpha',0.05,'tail','right');
+            if (pwilcoxon <= 0.05) 
+                p_values = [p_values 0.05];
+            else
+                p_values = [p_values NaN];
+            end
+            sigstar({[1 2]},p_values);
+        end
     end
 elseif regular_or_chance_level_classifier == 0
 % Estimate chance level performance by permutation of labels and data
