@@ -12,7 +12,7 @@ fopen(obj);
 %a = fread(obj, 1, 'uchar');              % No longer used. Nikunj09/05/2014
 %fprintf('%s\n', a);
 %if a == 'm'
-fwrite(obj,7);
+fwrite(obj,7);          % 7 - Movement onset
 %end
 fclose(obj);
 delete(obj);

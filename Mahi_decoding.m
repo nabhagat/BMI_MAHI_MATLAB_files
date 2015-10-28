@@ -60,7 +60,7 @@ Channels_nos = [ 4, 38, 5, 39, 6,43, 9, 32, 10, 44, 13, 48, 14, 49, 15, 52, 19, 
 % Subject Details 
 Subject_name = 'S9007'; % change1
 Sess_num = '2';  % For calibration and classifier model             
-closeloop_Sess_num = '6';     
+closeloop_Sess_num = '14';     
 Cond_num = 1;  % 1 - Active/User-driven; 2 - Passive; 3 - Triggered/User-triggered; 4 - Observation 
 Block_num = 160;
 
@@ -2179,7 +2179,7 @@ if test_classifier == 1
     
     % set and open serial port
     %obj = serial('com1','baudrate',115200,'parity','none','databits',8,'stopbits',1);   %  InMotion
-    exo_obj = serial('COM3','baudrate',19200,'parity','none','databits',8,'stopbits',1);      %   Mahi               % change8
+    exo_obj = serial('COM4','baudrate',19200,'parity','none','databits',8,'stopbits',1);      %   Mahi               % change8
     video_record_obj = serial('COM1','baudrate',19200,'parity','none','databits',8,'stopbits',1);
     
     try
@@ -2242,7 +2242,9 @@ if test_classifier == 1
    
     % Useful serial port command
     %instrfind, delete(instrfindall)
-    
+    figure; plot(Proc_EMG(3:4,:)')
+    line([0 length(Proc_EMG(3,:))],[3 3],'Color','r')
+
      
     
 %% Raster plot for close loop

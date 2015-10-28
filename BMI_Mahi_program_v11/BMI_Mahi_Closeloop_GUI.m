@@ -33,6 +33,7 @@ function varargout = BMI_Mahi_Closeloop_GUI(varargin)
 % 9-08-2014 - Reverting back to high pass followed by low pass filter instead of band pass filter because of filter order and stability issues.
 %                     - Changing order of low pass and large laplacian filters - should not affect output
 % 9/14/2015 - Added baseline correction for EMG RMS calculation. The baseline is taken as 100 samples or ~ 30 sec during rest. 
+% 9/25/2015 - Added 'S 80' marker to be saved in BMI file
 %--------------------------------------------------------------------------------------------------
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -388,8 +389,8 @@ function pushbutton_start_closeloop_Callback(hObject, eventdata, handles)
     % Classifier parameters
     cloop_prob_threshold = 0.844; %CloopClassifier.opt_prob_threshold;            
     cloop_cnts_threshold  = 8; %CloopClassifier.consecutive_cnts_threshold;        % Number of consecutive valid cnts required to accept as 'GO'
-    emg_mvc_threshold = 15;             % change20       % Biceps
-    emg_tricep_threshold = 20;          % Triceps
+    emg_mvc_threshold = 3;             % change20       % Biceps
+    emg_tricep_threshold = 3;          % Triceps
 
     DEFINE_GO = 1;
     DEFINE_NOGO = 2;
@@ -864,7 +865,7 @@ function EEGTimer_Callback(timer_object,eventdata,hObject)
                             if datahdr.markerCount > 0                            
                                 for m = 1:datahdr.markerCount
                                     %disp(markers(m));
-                                    if (strcmp(markers(m).description,move_trig_label))         % Movement onset                                        
+                                    if (strcmp(markers(m).description,move_trig_label) || strcmp(markers(m).description,'S 80'))         % Movement onset                                        
                                         marker_block = [marker_block; [double(markers(m).sample_num),100]];
                                         %kcount = kcount + 1;
                                     elseif (strcmp(markers(m).description,rest_trig_label))     % Targets appear
@@ -936,8 +937,9 @@ function EEGTimer_Callback(timer_object,eventdata,hObject)
                                         
                                        % Calcuate emg baseline for RMS - Added 9/14/2015
                                        if update_emg_baseline == 1
-                                           % look back at 33 samples ~ 10 seconds
-                                           emg_rms_baseline = mean(processed_emg(:,end-33+1:end),2);
+                                           % look back at 33 samples ~ 10 seconds; 100 samples ~ 30 sec
+                                           emg_rms_baseline = mean(processed_emg(:,end-100+1:end),2);
+                                           disp(emg_rms_baseline')
                                            update_emg_baseline = 0;
                                        end
                                        
