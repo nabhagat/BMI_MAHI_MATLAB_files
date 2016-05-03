@@ -172,6 +172,7 @@ varargout{8} = all_cloop_cnts_threshold;
 %varargout{9} = downsample(processed_emg',downsamp_factor)';
 if ~isempty(processed_emg)
     %varargout{9} = resample(processed_emg',6,1)';    % Not required to resample - 9/14/2015
+     %resample(cl_BMI_data$processed_emg[1,],20,3.333) - EMG RMS sampling frequency is 3.333 Hz
     varargout{9} = processed_emg;
 else
     varargout{9} = 0;
@@ -348,7 +349,7 @@ function pushbutton_start_closeloop_Callback(hObject, eventdata, handles)
                  '_ses' num2str(handles.user.calibration_data.sess_num)...
                  '_cond' num2str(handles.user.calibration_data.cond_num)...
                  '_block' num2str(handles.user.calibration_data.block_num)...
-                 '_performance_optimized_smart.mat'];           % change17
+                 '_performance_optimized_conventional_smart.mat'];           % change17
    
    handles.user.testing_data.closeloop_block_num = handles.user.testing_data.closeloop_block_num + 1;
    set(handles.textbox_cloop_block_num,'String',num2str(handles.user.testing_data.closeloop_block_num));          
@@ -365,6 +366,7 @@ function pushbutton_start_closeloop_Callback(hObject, eventdata, handles)
     CloopClassifier = Performance;
     % classifier_channels = CloopClassifier.classchannels;
     classifier_channels =   Performance.optimized_channels; % change18 - Added 9/7/2015
+    disp(classifier_channels);
     emg_classifier_channels = [42 41 51 17 45 46 55 22]; % [LB1 LB2 LT1 LT2 RB1 RB2 RT1 RT2] % change19
         
     if handles.system.left_impaired 
@@ -387,18 +389,18 @@ function pushbutton_start_closeloop_Callback(hObject, eventdata, handles)
     Best_BMI_classifier = CloopClassifier.eeg_svm_model{max_acc_index};
 
     % Classifier parameters
-    cloop_prob_threshold = 0.844; %CloopClassifier.opt_prob_threshold;            
-    cloop_cnts_threshold  = 8; %CloopClassifier.consecutive_cnts_threshold;        % Number of consecutive valid cnts required to accept as 'GO'
-    emg_mvc_threshold = 3;             % change20       % Biceps
-    emg_tricep_threshold = 3;          % Triceps
+    cloop_prob_threshold = 0.643; %CloopClassifier.opt_prob_threshold;            % change20 
+    cloop_cnts_threshold  = 5; %CloopClassifier.consecutive_cnts_threshold;        % Number of consecutive valid cnts required to accept as 'GO'
+    emg_mvc_threshold = 2;             % change21       % Biceps
+    emg_tricep_threshold = 2;          % Triceps
 
     DEFINE_GO = 1;
     DEFINE_NOGO = 2;
     target_trig_label = 'S  8';                 
     move_trig_label = 'S 16';  % 'S 32'; %'S  8'; %'100';   
     rest_trig_label = 'S  2';  % 'S  2'; %'200';
-    block_start_label = 'S 42'; %'S 10';        % change21
-    block_stop_label = 'S254';
+    block_start_label = 'S 42'; %'S 10';        % change22
+    block_stop_label = 'S238';
     
     % Change for individual recorder host
     recorderip = '127.0.0.1';

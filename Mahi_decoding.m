@@ -52,15 +52,22 @@ myColors = ['r','b','k','m','y','c','m','g','r','b','k','b','r','m','g','r','b',
     'g','r','b','k','y','c','m','g','r','b','k','b','r','m','g','r','b','k','y','c','m'];
 
 % EEG Channels used for identifying MRCP
-Channels_nos = [ 4, 38, 5, 39, 6,43, 9, 32, 10, 44, 13, 48, 14, 49, 15, 52, 19, ... 
-               53, 20, 54, 24, 57, 25, 58, 26];    % 32 or 65 for FCz
+%Channels_nos = [ 4, 38, 5, 39, 6,43, 9, 32, 10, 44, 13, 48, 14, 49, 15, 52, 19, ... 
+%               53, 20, 54, 24, 57, 25, 58, 26];    % 32 or 65 for FCz
+
+%12-1-2015
+Channels_nos = [ 37,   4, 38,   5,  39,   6,  40,... 
+                                   8, 43,   9, 32, 10, 44,  11,...
+                                 47, 13, 48, 14, 49, 15, 50,...
+                                 18, 52, 19, 53, 20, 54, 21,... 
+                                 56, 24, 57, 25, 58, 26, 59];    % 32 or 65 for FCz
 
  EMG_channel_nos = [17 22 41 42 45 46 51 55];
 
 % Subject Details 
-Subject_name = 'S9007'; % change1
+Subject_name = 'S9012'; % change1
 Sess_num = '2';  % For calibration and classifier model             
-closeloop_Sess_num = '14';     
+closeloop_Sess_num = '6';     
 Cond_num = 1;  % 1 - Active/User-driven; 2 - Passive; 3 - Triggered/User-triggered; 4 - Observation 
 Block_num = 160;
 
@@ -76,16 +83,22 @@ use_GUI_for_testing = 1;    % always 1
 if train_classifier == 1
     disp('******************** Training Model **********************************');
     readbv_files = 0;   % Added 8-28-2015
-    blocks_nos_to_import = [2 3 4 5];
-    process_raw_eeg = 0;         % Also remove extra 'S  2' triggers
-    process_raw_emg = 1; extract_emg_epochs = 0;
-    extract_epochs = 0;     % extract move and rest epochs
+    blocks_nos_to_import = [1 2 3 4];
+    process_raw_eeg = 1;         % Also remove extra 'S  2' triggers
+    process_raw_emg = 0; extract_emg_epochs = 0;
+    extract_epochs = 1;     % extract move and rest epochs
   
     % Used during extracting epochs for removing corrupted epochs. The numbers of corrupted epochs 
     % must be known in advance. Otherwise declare remove_corrupted_epochs = [];
     
     remove_corrupted_epochs = []; %change5
-    remove_corrupted_epochs = [13 17 18 27 28 31 36 37 38 40 66 114 115 118 159]; % S9007_ses2_cond1_block160
+    %remove_corrupted_epochs = [4 5 6 7 10 11 16 32 33 34 35 36]; % NJBT_ses1_cond1_block100
+    
+    %remove_corrupted_epochs = [13 17 18 27 28 31 36 37 38 40 66 114 115 118 159]; % S9007_ses2_cond1_block160
+    %remove_corrupted_epochs = [137]; % S9007_ses2_cond3_block150
+    
+    %remove_corrupted_epochs = [109, 117]; % S9010_ses2_cond1_block160
+    remove_corrupted_epochs = [5, 9, 101,144,155]; % S9012_ses1_cond1_block160
     
     %remove_corrupted_epochs = [ remove_corrupted_epochs 41 125 153]; %ERWS_ses2_cond3_block160
 
@@ -117,8 +130,8 @@ if train_classifier == 1
     %remove_corrupted_epochs = [21 22 50 60]; %MR_ses1_cond3
     %remove_corrupted_epochs = [49 50 61]; %MR_ses1_cond4
     
-    manipulate_epochs = 0;
-    plot_ERPs = 0;
+    manipulate_epochs = 1;
+    plot_ERPs = 1;
     label_events = 0;       % process kinematics and label the events/triggers
     use_kinematics_old_code = 0;    % Use old code for InMotion
     kin_blocks = [1 2 3 4;                % Session 1
@@ -177,8 +190,8 @@ use_band_pass = 0; %always 0, because 4th order bandpass butterworth filter is u
 move_trig_label = 'S 16';  % 'S 32'; %'S  8'; %'100';
 rest_trig_label = 'S  2';  % 'S  2'; %'200';
 target_reached_trig_label = 'S  8';
-move_epoch_dur = [-3.5 1.5]; % [-4 12.1];
-rest_epoch_dur = [-3.5 1.5];
+move_epoch_dur = [-3.5 1]; % [-4 12.1];
+rest_epoch_dur = [-3.5 1];
 
 %4. Working with Epochs
 baseline_int = [-2.5 -2.25];   
@@ -202,6 +215,15 @@ if readbv_files == 1
     EMG_dataset_to_merge = [];
     
     for block_index = 1:length(blocks_nos_to_import)
+
+%     Only for subject S9009
+%         if block_index == 1 || block_index == 2
+%             Cond_num = 1;
+%         else
+%             Cond_num = 3;
+%         end
+%     **********Only for subject S9009
+
         fprintf('\nImporting block # %d of %d blocks...\n',blocks_nos_to_import(block_index),length(blocks_nos_to_import));
         
         total_no_of_trials = total_no_of_trials + 20;
@@ -747,12 +769,14 @@ if process_raw_emg == 1
     hold on; plot(emgt, EMG_rms(2,:),'r');
     legend('L.biceps', 'L.triceps');
     title('Left hand (RMS)');
-
+    ylim([0 50]);
+    
     subplot(2,1,2); 
     plot(emgt, EMG_rms(3,:),'k');
     hold on; plot(emgt, EMG_rms(4,:),'g');
     legend('R.biceps', 'R.triceps');
     title('Right hand (RMS)');
+    ylim([0 50]);
 %% 
 %     EEG.data(1,:) = BPFred_emg(1,:);
 %     EEG.data(2,:) = BPFred_emg(2,:);
@@ -1776,7 +1800,7 @@ if plot_ERPs == 1
     paper_font_size = 10;
     figure('Position',[100 100 3.5*116 2.5*116]); 
     %figure('units','normalized','outerposition',[0 0 1 1])
-    T_plot = tight_subplot(numel(Channels_nos)/5,5,[0.01 0.01],[0.15 0.01],[0.1 0.1]);
+    T_plot = tight_subplot(numel(Channels_nos)/7,7,[0.01 0.01],[0.15 0.01],[0.1 0.1]);
     hold on;
     plot_ind4 = 1; % Index of plot where axis should appear
     
@@ -1815,9 +1839,9 @@ if plot_ERPs == 1
 % %             end
 % %         end
             
-%         plot(rest_erp_time,rest_avg_channels(Channels_nos(ind4),:),'b','LineWidth',2);
-%         plot(rest_erp_time,rest_avg_channels(Channels_nos(ind4),:)+ (rest_SE_channels(Channels_nos(ind4),:)),'-','Color',[0 0 1],'LineWidth',0.5);
-%         plot(rest_erp_time,rest_avg_channels(Channels_nos(ind4),:) - (rest_SE_channels(Channels_nos(ind4),:)),'-','Color',[0 0 1],'LineWidth',0.5);
+        %plot(rest_erp_time,rest_avg_channels(Channels_nos(ind4),:),'b','LineWidth',2);
+        %plot(rest_erp_time,rest_avg_channels(Channels_nos(ind4),:)+ (rest_SE_channels(Channels_nos(ind4),:)),'-','Color',[0 0 1],'LineWidth',0.5);
+        %plot(rest_erp_time,rest_avg_channels(Channels_nos(ind4),:) - (rest_SE_channels(Channels_nos(ind4),:)),'-','Color',[0 0 1],'LineWidth',0.5);
 %         
 %         jbfill(move_erp_time,move_avg_channels(Channels_nos(ind4),:)+ (move_SE_channels(Channels_nos(ind4),:)),...
 %            move_avg_channels(Channels_nos(ind4),:)- (move_SE_channels(Channels_nos(ind4),:)),[1 1 1],'k',0,0.3);
@@ -1828,7 +1852,7 @@ if plot_ERPs == 1
         %plot(erp_time,move_avg_channels(Channels_nos(RPind),:),rest_time, rest_avg_channels(Channels_nos(RPind),:),'r','LineWidth',2);
         %plot(erp_time,preprocessed_move_epochs(Channels_nos(RPind),:),'b',erp_time,standardize_move_epochs(Channels_nos(RPind),:),'k',erp_time,rest_avg_channels(Channels_nos(RPind),:),'r','LineWidth',2);
         %plot(erp_time,move_avg_channels(Channels_nos(RPind),:),'r','LineWidth',2);
-        text(-2,-5,[EEG.chanlocs(Channels_nos(ind4)).labels ',' int2str(Channels_nos(ind4))],'Color','k','FontWeight','normal','FontSize',paper_font_size-1); % ', ' num2str(Channels_nos(ind4))
+        text(-2,-4,[EEG.chanlocs(Channels_nos(ind4)).labels ',' int2str(Channels_nos(ind4))],'Color','k','FontWeight','normal','FontSize',paper_font_size-1); % ', ' num2str(Channels_nos(ind4))
         set(gca,'YDir','reverse');
         %if max(abs(move_avg_channels(Channels_nos(RPind),:))) <= 6
 %          if max((move_avg_channels(Channels_nos(ind4),:)+(move_SE_channels(Channels_nos(ind4),:)))) >= 6 || ...
@@ -1839,7 +1863,7 @@ if plot_ERPs == 1
 %             set(gca,'YTick',[-10 0 10]);
 %             set(gca,'YTickLabel',{'-10'; '0'; '10'});
 %         else
-            axis([-2.5 1 -10 5]);
+            axis([move_epoch_dur(1) move_epoch_dur(2) -5 5]);
             %axis([move_erp_time(1) 1 -15 15]);
             % set(gca,'YTick',[-5 0 2]);                                                                                                                                            % uncomment for publication figure
             % set(gca,'YTickLabel',{'-5'; '0'; '+2'},'FontWeight','normal','FontSize',paper_font_size-1);                        % uncomment for publication figure
@@ -1849,11 +1873,11 @@ if plot_ERPs == 1
         plot_ind4 = plot_ind4 + 1;
         grid on;
         
-        if ind4 == 6
+        if ind4 == 29
             % set(gca,'XColor',[1 1 1],'YColor',[1 1 1])          % uncomment for publication figure
             % set(gca,'YtickLabel',' ');
-             set(gca,'YTick',[-20 -10 0 10]);                                                                                                                                            % comment for publication figure
-            set(gca,'YTickLabel',{'-20';'-10'; '0'; '+10'},'FontWeight','normal','FontSize',paper_font_size-1);                        % comment for publication figure
+             set(gca,'YTick',[-10 -5 0 5]);                                                                                                                                            % comment for publication figure
+            set(gca,'YTickLabel',{'-10';'-5'; '0'; '+5'},'FontWeight','normal','FontSize',paper_font_size-1);                        % comment for publication figure
              hylab = ylabel('MRCP Grand Average','FontSize',paper_font_size-1,'Color',[0 0 0]);
              pos_hylab = get(hylab,'Position');
              set(hylab,'Position',[pos_hylab(1) pos_hylab(2) pos_hylab(3)]);
@@ -1875,18 +1899,18 @@ if plot_ERPs == 1
     %subplot(5,5,8);
    
     
-    axes(T_plot(6));
+    axes(T_plot(29));
     set(gca,'Visible','on');
     bgcolor = get(gcf,'Color');
     set(gca,'YColor',[0 0 0]);
-    set(gca,'XTick',[-2 0 1]);
-    set(gca,'XTickLabel',{'-2'; 'MO';'1'},'FontSize',paper_font_size-1);  
+    set(gca,'XTick',[-2 -1 0 1]);
+    set(gca,'XTickLabel',{'-2'; '-1'; 'MO';'1'},'FontSize',paper_font_size-1);  
     set(gca,'TickLength',[0.03 0.025])
     hold on;
     xlabel('Time (s)', 'FontSize',paper_font_size-1);
     
     % Annotate line
-    axes(T_plot(15));
+    axes(T_plot(35));
     axes_pos = get(gca,'Position'); %[lower bottom width height]
     axes_ylim = get(gca,'Ylim');
     annotate_length = (5*axes_pos(4))/(axes_ylim(2) - axes_ylim(1));
@@ -1929,12 +1953,12 @@ if plot_ERPs == 1
 %     eeglab redraw;
     
     %Channels_nos = [9 32 10 44 48 14 49 15 19 53 20 54];
-    ra1 = [-10 10];
+    ra1 = [-5 5];
     figure;
-    T_plot = tight_subplot(numel(Channels_nos)/5,5,0.05,[0.1 0.1],[0.1 0.1]);
+    T_plot = tight_subplot(numel(Channels_nos)/7,7,0.05,[0.1 0.1],[0.1 0.1]);
     for ind4 = 1:length(Channels_nos)
         axes(T_plot(ind4));
-        if ind4 == 25
+        if ind4 == 35
             pop_erpimage(EEG,1, Channels_nos(ind4),[[]],'',5,1,{},[],'','noxlabel','cbar','on','caxis',[ra1(1) ra1(2)],'cbar_title','\muV'); %EEG.chanlocs(Channels_sel(ch)).labels
             
         else
@@ -2179,7 +2203,7 @@ if test_classifier == 1
     
     % set and open serial port
     %obj = serial('com1','baudrate',115200,'parity','none','databits',8,'stopbits',1);   %  InMotion
-    exo_obj = serial('COM4','baudrate',19200,'parity','none','databits',8,'stopbits',1);      %   Mahi               % change8
+    exo_obj = serial('COM47','baudrate',19200,'parity','none','databits',8,'stopbits',1);      %   Mahi               % change8
     video_record_obj = serial('COM1','baudrate',19200,'parity','none','databits',8,'stopbits',1);
     
     try
@@ -2243,7 +2267,7 @@ if test_classifier == 1
     % Useful serial port command
     %instrfind, delete(instrfindall)
     figure; plot(Proc_EMG(3:4,:)')
-    line([0 length(Proc_EMG(3,:))],[3 3],'Color','r')
+    line([0 length(Proc_EMG(3,:))],[10 10],'Color','r')
 
      
     

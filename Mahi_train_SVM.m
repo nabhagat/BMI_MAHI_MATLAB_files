@@ -23,7 +23,7 @@ myColors = ['g','r','m','k','y','c','m','g','r','b','k','b','r','m','g','r','b',
     'g','r','b','k','y','c','m','g','r','b','k','b','r','m','g','r','b','k','y','c','m'];
 
 % Subject Details - change9
-Subject_name = 'S9007';
+Subject_name = 'S9012';
 Sess_num = '2';
 Cond_num = 1;  % 1 - Active; 2 - Passive; 3 - Triggered; 4 - Observation 
 Block_num = 160;
@@ -54,7 +54,7 @@ downsamp_factor = Average.Fs_eeg/Fs_eeg;
         move_epochs = Average.move_epochs;
         rest_epochs = Average.rest_epochs;
     end
-    
+
 % Downsample the epochs and epoch_times
     for k = 1:no_channels
         move_epochs_s(:,:,k) = downsample(move_epochs(:,:,k)',downsamp_factor)';
@@ -159,7 +159,7 @@ end
      
 %4. Cross validation approach
     use_shifting_window_CV = 1;  % 0 - Conventional CrossValidation, 1 - Shifting Window CrossValidation 
-    crossvalidation_trial_time = [-2.5 1]; % Time interval over which cross validation is done for each trial 
+    crossvalidation_trial_time = [-2.5 0.95]; % Time interval over which cross validation is done for each trial 
     consecutive_cnts_threshold = 3;                         % To be Optimized
     prob_est_threshold = 0.5;                               % Initial threshold. Automatically optimized using ROC curves for window length
     Max_Min_Thr = [];
@@ -260,8 +260,7 @@ if use_conventional_features == 1
         y = rest_ch_avg(d,rlim1:rlim2);
         conv_mahal_dist(d + no_epochs) = sqrt((y-conv_Mu_move)/(conv_Cov_Mat)*(y-conv_Mu_move)');
     end
-       
-    Conventional_Features = [Conventional_Features conv_mahal_dist];
+    
      
 %7. Amplitude Range
 %   amp_range = [(max(bmove_ch_avg,[],2) - min(bmove_ch_avg,[],2));
@@ -1155,7 +1154,7 @@ if use_svm_classifier == 1
         file_identifier = [ file_identifier '_manual'];
     end
 
-    filename2 = [folder_path Subject_name '_ses' num2str(Sess_num) '_cond' num2str(Cond_num) '_block' num2str(Block_num) '_performance_optimized' file_identifier '_09072015.mat']; %datestr(now,'dd_mm_yy_HHMM')
+    filename2 = [folder_path Subject_name '_ses' num2str(Sess_num) '_cond' num2str(Cond_num) '_block' num2str(Block_num) '_performance_optimized' file_identifier datestr(now,'_dd_mm_yy_HHMM') '.mat']; 
     save(filename2,'Performance');   
 end
 
@@ -1292,7 +1291,7 @@ end
             sigstar({[1 2],[2 3]},p_values);
         else
             figure; 
-            group_names = {'Fixed','Variable'};
+            group_names = {{'Fixed';'Adaptive'},{'window';'window'}};
             online_variable = Performance.All_eeg_accur{Performance.smart_opt_wl_ind}(2,:);
             if use_conventional_features == 1
                 online_fixed = Performance.All_eeg_accur{Performance.conv_opt_wl_ind}(1,:);
