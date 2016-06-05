@@ -65,9 +65,9 @@ Channels_nos = [ 37,   4, 38,   5,  39,   6,  40,...
  EMG_channel_nos = [17 22 41 42 45 46 51 55];
 
 % Subject Details 
-Subject_name = 'S9012'; % change1
-Sess_num = '2';  % For calibration and classifier model             
-closeloop_Sess_num = '6';     
+Subject_name = 'NB'; % change1
+Sess_num = '2';  % For calibration and classifier model              
+closeloop_Sess_num = '3';     % For saving data
 Cond_num = 1;  % 1 - Active/User-driven; 2 - Passive; 3 - Triggered/User-triggered; 4 - Observation 
 Block_num = 160;
 
@@ -84,21 +84,22 @@ if train_classifier == 1
     disp('******************** Training Model **********************************');
     readbv_files = 0;   % Added 8-28-2015
     blocks_nos_to_import = [1 2 3 4];
-    process_raw_eeg = 1;         % Also remove extra 'S  2' triggers
+    process_raw_eeg = 0;         % Also remove extra 'S  2' triggers
     process_raw_emg = 0; extract_emg_epochs = 0;
-    extract_epochs = 1;     % extract move and rest epochs
+    extract_epochs = 0;     % extract move and rest epochs
   
     % Used during extracting epochs for removing corrupted epochs. The numbers of corrupted epochs 
     % must be known in advance. Otherwise declare remove_corrupted_epochs = [];
     
-    remove_corrupted_epochs = []; %change5
+    %remove_corrupted_epochs = []; %change5
+    remove_corrupted_epochs = [75 155]; % NB_ses2_cond1_block160
     %remove_corrupted_epochs = [4 5 6 7 10 11 16 32 33 34 35 36]; % NJBT_ses1_cond1_block100
     
     %remove_corrupted_epochs = [13 17 18 27 28 31 36 37 38 40 66 114 115 118 159]; % S9007_ses2_cond1_block160
     %remove_corrupted_epochs = [137]; % S9007_ses2_cond3_block150
     
     %remove_corrupted_epochs = [109, 117]; % S9010_ses2_cond1_block160
-    remove_corrupted_epochs = [5, 9, 101,144,155]; % S9012_ses1_cond1_block160
+    %remove_corrupted_epochs = [5, 9, 101,144,155]; % S9012_ses1_cond1_block160
     
     %remove_corrupted_epochs = [ remove_corrupted_epochs 41 125 153]; %ERWS_ses2_cond3_block160
 
@@ -1839,9 +1840,9 @@ if plot_ERPs == 1
 % %             end
 % %         end
             
-        %plot(rest_erp_time,rest_avg_channels(Channels_nos(ind4),:),'b','LineWidth',2);
-        %plot(rest_erp_time,rest_avg_channels(Channels_nos(ind4),:)+ (rest_SE_channels(Channels_nos(ind4),:)),'-','Color',[0 0 1],'LineWidth',0.5);
-        %plot(rest_erp_time,rest_avg_channels(Channels_nos(ind4),:) - (rest_SE_channels(Channels_nos(ind4),:)),'-','Color',[0 0 1],'LineWidth',0.5);
+        plot(rest_erp_time,rest_avg_channels(Channels_nos(ind4),:),'b','LineWidth',2);
+        plot(rest_erp_time,rest_avg_channels(Channels_nos(ind4),:)+ (rest_SE_channels(Channels_nos(ind4),:)),'-','Color',[0 0 1],'LineWidth',0.5);
+        plot(rest_erp_time,rest_avg_channels(Channels_nos(ind4),:) - (rest_SE_channels(Channels_nos(ind4),:)),'-','Color',[0 0 1],'LineWidth',0.5);
 %         
 %         jbfill(move_erp_time,move_avg_channels(Channels_nos(ind4),:)+ (move_SE_channels(Channels_nos(ind4),:)),...
 %            move_avg_channels(Channels_nos(ind4),:)- (move_SE_channels(Channels_nos(ind4),:)),[1 1 1],'k',0,0.3);
@@ -2203,7 +2204,7 @@ if test_classifier == 1
     
     % set and open serial port
     %obj = serial('com1','baudrate',115200,'parity','none','databits',8,'stopbits',1);   %  InMotion
-    exo_obj = serial('COM47','baudrate',19200,'parity','none','databits',8,'stopbits',1);      %   Mahi               % change8
+    exo_obj = serial('COM3','baudrate',19200,'parity','none','databits',8,'stopbits',1);      %   Mahi               % change8
     video_record_obj = serial('COM1','baudrate',19200,'parity','none','databits',8,'stopbits',1);
     
     try

@@ -389,10 +389,10 @@ function pushbutton_start_closeloop_Callback(hObject, eventdata, handles)
     Best_BMI_classifier = CloopClassifier.eeg_svm_model{max_acc_index};
 
     % Classifier parameters
-    cloop_prob_threshold = 0.643; %CloopClassifier.opt_prob_threshold;            % change20 
-    cloop_cnts_threshold  = 5; %CloopClassifier.consecutive_cnts_threshold;        % Number of consecutive valid cnts required to accept as 'GO'
-    emg_mvc_threshold = 2;             % change21       % Biceps
-    emg_tricep_threshold = 2;          % Triceps
+    cloop_prob_threshold = CloopClassifier.opt_prob_threshold;            % change20 
+    cloop_cnts_threshold  = CloopClassifier.consecutive_cnts_threshold;        % Number of consecutive valid cnts required to accept as 'GO'
+    emg_mvc_threshold = 5;             % change21       % Biceps
+    emg_tricep_threshold = 5;          % Triceps
 
     DEFINE_GO = 1;
     DEFINE_NOGO = 2;
