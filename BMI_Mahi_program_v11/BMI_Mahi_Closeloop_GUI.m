@@ -24,6 +24,7 @@ function varargout = BMI_Mahi_Closeloop_GUI(varargin)
 
 % Last Modified by GUIDE v2.5 24-Jul-2015 11:09:50
 %% ********************Revisions
+% 1-6-2017 - "Subscript indices must either be real positive integers or logicals." you get this error when EMG baseline data is less than 30 sec.
 % 4-9-2015 - Stopped saving EMG values in .txt file 
 % 7-24-2015 - Stopped launching flexion_game if use_mahi_exo was selected
 % 8-10-2015 - Added and modified video recording function
@@ -106,6 +107,10 @@ else
 end
 
 set(handles.axes_raster_plot,'box','on','nextplot','replacechildren');
+% handles.update_plot_timer = timer('TimerFcn', {@update_plot_timer_Callback,hObject},...
+%                                      'StartDelay', 0, 'Period',0.05,'ExecutionMode','fixedRate');       % Added 06/05/2016
+% handles.realtime_plot.plot_time = 0:1/20:(30 - (1/20)); % 30 sec @ 20 Hz
+% handles.realtime_plot.move_counts_data = zeros(size(handles.realtime_plot.plot_time));
 
 handles.reset_eeg_control_timer = timer('TimerFcn', {@reset_eeg_control_timer_Callback,hObject},...
                                      'StartDelay', 0, 'Period',1,'ExecutionMode','fixedRate');
@@ -333,6 +338,7 @@ function pushbutton_start_closeloop_Callback(hObject, eventdata, handles)
     global eeg_control
     global emg_control_channels
     global hflexion_game
+    global use_avatar
     
     % Load Performance variable from .mat file
     handles.user.calibration_data.folder_path = ['C:\NRI_BMI_Mahi_Project_files\All_Subjects\Subject_' handles.user.calibration_data.subject_initials '\' ...
@@ -368,6 +374,7 @@ function pushbutton_start_closeloop_Callback(hObject, eventdata, handles)
     classifier_channels =   Performance.optimized_channels; % change18 - Added 9/7/2015
     disp(classifier_channels);
     emg_classifier_channels = [42 41 51 17 45 46 55 22]; % [LB1 LB2 LT1 LT2 RB1 RB2 RT1 RT2] % change19
+    %emg_classifier_channels = [42 41 51 17 45 46 45 46]; % Added 06/05/2016 % For only right biceps control
         
     if handles.system.left_impaired 
         emg_control_channels = [1 2];
@@ -391,16 +398,17 @@ function pushbutton_start_closeloop_Callback(hObject, eventdata, handles)
     % Classifier parameters
     cloop_prob_threshold = CloopClassifier.opt_prob_threshold;            % change20 
     cloop_cnts_threshold  = CloopClassifier.consecutive_cnts_threshold;        % Number of consecutive valid cnts required to accept as 'GO'
-    emg_mvc_threshold = 5;             % change21       % Biceps
-    emg_tricep_threshold = 5;          % Triceps
+    emg_mvc_threshold = 3;             % change21       % Biceps
+    emg_tricep_threshold = 3;          % Triceps 
 
     DEFINE_GO = 1;
     DEFINE_NOGO = 2;
     target_trig_label = 'S  8';                 
     move_trig_label = 'S 16';  % 'S 32'; %'S  8'; %'100';   
     rest_trig_label = 'S  2';  % 'S  2'; %'200';
-    block_start_label = 'S 42'; %'S 10';        % change22
-    block_stop_label = 'S238';
+    block_start_label = 'S 42'; %'S 10';                                              % change22 
+    block_stop_label = 'S238'; %'S254'
+    use_avatar = false;
     
     % Change for individual recorder host
     recorderip = '127.0.0.1';
@@ -429,7 +437,18 @@ function pushbutton_start_closeloop_Callback(hObject, eventdata, handles)
     set(handles.editbox_triceps_threshold,'String',num2str(emg_tricep_threshold));
     
     if ~handles.system.use_mahi_exo
-        eval('flexion_game');                     % added 7-24-2015
+        if use_avatar == true                         % Added on 6-6-2016
+            strcmd=strcat('9,90,','45',...
+            ',0,0,-','0',...
+            ',0,0,','0',...
+            ',0,0,','0',...
+            ',0,90,','78',...
+            ',180,0,','0',...
+            ',0,0');
+            judp('send',11000,'localhost',int8(strcmd));
+        else
+            eval('flexion_game');                     % added 7-24-2015
+        end
         %disp(hflexion_game);
     else
         %disp(hflexion_game);
@@ -442,6 +461,11 @@ function pushbutton_start_closeloop_Callback(hObject, eventdata, handles)
                                           '_block' num2str(handles.user.testing_data.closeloop_block_num) '_closeloop_video_' datestr(clock,'mm-dd-yyyy_HH_MM_SS')];
         fprintf(handles.user.testing_data.serial_vidobj,'%s\n',['Start ' video_filename]);       % send start message and filename to remote webcam, SPACE after Start is required
     end
+    
+     % Initialize plot with zero data - Added on 6/5/2016
+%     handles.realtime_plot.move_counts_handle = plot(handles.axes_raster_plot,handles.realtime_plot.plot_time,handles.realtime_plot.move_counts_data, '-ob');
+%     set(handles.realtime_plot.move_counts_handle,'YDataSource','handles.realtime_plot.move_counts_data');
+%     set(handles.realtime_plot.move_counts_handle,'XDataSource','handles.realtime_plot.plot_time');
     
     guidata(hObject,handles);
 
@@ -621,7 +645,7 @@ function EEGTimer_Callback(timer_object,eventdata,hObject)
     global move_trig_label
     global rest_trig_label
     global block_start_label block_stop_label
-    global hflexion_game
+    global hflexion_game use_avatar
     global datahdr
     global eeg_control
     global emg_control_channels
@@ -742,11 +766,14 @@ function EEGTimer_Callback(timer_object,eventdata,hObject)
                             %rest_command = [];           % Number of predicted rests
                             %likert_score = [];          % To be used for recording trial success/ failure
                             %prediction = [];
-                            if handles.system.use_mahi_exo == 1
-                                   start_prediction = false;            
-                            else
-                                   start_prediction = true;
-                            end
+                            
+                            % Commented on 6-6-2016
+%                             if handles.system.use_mahi_exo == 1
+%                                    start_prediction = false;            
+%                             else
+%                                    start_prediction = true;
+%                             end
+                            start_prediction = false;       % Added on 6-6-2016. Always wait for trigger to start prediction     
                             kcount = 0;
 
 
@@ -890,6 +917,7 @@ function EEGTimer_Callback(timer_object,eventdata,hObject)
                                        if start_prediction == true
                                            disp('Starting Prediction');
                                            update_emg_baseline = 1;        % Added 9/14/2015
+                                           %start(handles.update_plot_timer); % Added 6/5/2016
                                        else
                                            disp('Stoping Prediction');
                                        end
@@ -1029,6 +1057,9 @@ function EEGTimer_Callback(timer_object,eventdata,hObject)
                                                      trapz(window_time,sliding_window);
                                                      sqrt((sliding_window-CloopClassifier.smart_Mu_move)/(CloopClassifier.smart_Cov_Mat)*(sliding_window-CloopClassifier.smart_Mu_move)')];
                                                      %sqrt(mahal(sliding_window,CloopClassifier.move_ch_avg(:,:)))];
+                                 if feature_vector(4) > 50
+                                     display('mahalnobis high'); % Indicates when mahalanobis feature value is high, implies error in data
+                                 end
                                  all_feature_vectors = [ all_feature_vectors feature_vector];
                          % 3. Make a prediction; Class 1: Movement; Class 2: Rest
                                  [Decision_slid_win(sl_index),Acc_slid_win,Prob_slid_win(sl_index,:)] = svmpredict(DEFINE_NOGO,feature_vector',Best_BMI_classifier,'-b 1 -q');  %#ok<ASGLU>
@@ -1061,6 +1092,8 @@ function EEGTimer_Callback(timer_object,eventdata,hObject)
                                             if handles.system.use_eeg == 1      % If using EEG control only, then do not check EMG
                                                             if handles.system.serial_interface.enable_serial
                                                                 fwrite(handles.system.serial_interface.serial_object,[7]);                
+                                                            elseif use_avatar == true                         % Added on 6-6-2016
+                                                                avatar_arm_control;
                                                             elseif strcmp(get(hflexion_game.hball,'Visible'),'on') && strcmp(get(hflexion_game.move_ball_timer,'Running'),'off')
                                                                 start(hflexion_game.move_ball_timer);
                                                             else
@@ -1117,7 +1150,8 @@ function EEGTimer_Callback(timer_object,eventdata,hObject)
 %                                 prev_emg_mvc_pkt = emg_mvc_pkt;
                                 
                                 % unprocessed_eeg = [unprocessed_eeg new_pkt];  % test_change 8/22/2015
-                                processed_eeg   = [processed_eeg Filtered_EEG_Downsamp];
+                                processed_eeg   = [processed_eeg Filtered_EEG_Downsamp]; % commented on 08/10/2016
+                                %processed_eeg   = [processed_eeg new_pkt];
                                 Overall_spatial_chan_avg = [Overall_spatial_chan_avg spatial_chan_avg];
                             end   % end if dims_pkt > pkt_size
 
@@ -1129,10 +1163,12 @@ function EEGTimer_Callback(timer_object,eventdata,hObject)
                                     if ((emg_rms_pkt(emg_control_channels(1)) >= emg_mvc_threshold) || (emg_rms_pkt(emg_control_channels(2)) >= emg_tricep_threshold))            
                                             if handles.system.serial_interface.enable_serial
                                                     fwrite(handles.system.serial_interface.serial_object,[7]);                 
+                                            elseif use_avatar == true                         % Added on 6-6-2016
+                                                    avatar_arm_control;
                                             elseif strcmp(get(hflexion_game.hball,'Visible'),'on') && strcmp(get(hflexion_game.move_ball_timer,'Running'),'off')
                                                     start(hflexion_game.move_ball_timer);
                                             else
-                                                %ignore
+                                                % ignore
                                             end          
                                              % commented 4-9-15
                                             %fprintf(handles.user.testing_data.emg_decisions_fileID,'%6.3f \t %6.3f \t 1 \t %d \n',...
@@ -1397,6 +1433,18 @@ if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgr
 end
 
 function axes_raster_plot_CreateFcn(hObject, eventdata, handles)
+    
+% function update_plot_timer_Callback(timer_object,eventdata,hObject)  % Added on 06/05/2016
+%     handles = guidata(hObject);
+%     global start_prediction move_counts
+%     if start_prediction == true
+%         if ~isempty(move_counts)
+%             handles.realtime_plot.move_counts_data(1:end-1) = handles.realtime_plot.move_counts_data(2:end);
+%             handles.realtime_plot.move_counts_data(end) = move_counts(end);
+%         end
+%     refreshdata(handles.realtime_plot.move_counts_handle);
+%     end
+%     guidata(hObject,handles); 
 
 function pushbutton_manual_save_data_Callback(hObject, eventdata, handles)
 save_cloop_data(handles);
@@ -1530,7 +1578,8 @@ function checkbox_use_mahi_exo_Callback(hObject, eventdata, handles)
  function reset_eeg_control_timer_Callback(timer_object,eventdata,hObject)
      global eeg_control
      eeg_control = 0;
-%      guidata(handles,hObject);
+%      guidata(handles,hObject); 
+     
 
 % --- Executes on button press in checkbox_left_hand_impaired.
 function checkbox_left_hand_impaired_Callback(hObject, eventdata, handles)

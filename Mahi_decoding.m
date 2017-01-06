@@ -64,8 +64,8 @@ Channels_nos = [ 37,   4, 38,   5,  39,   6,  40,...
 
  EMG_channel_nos = [17 22 41 42 45 46 51 55];
 
-% Subject Details 
-Subject_name = 'NB'; % change1
+% Subject Details   
+Subject_name = 'S9017'; % change1
 Sess_num = '2';  % For calibration and classifier model              
 closeloop_Sess_num = '3';     % For saving data
 Cond_num = 1;  % 1 - Active/User-driven; 2 - Passive; 3 - Triggered/User-triggered; 4 - Observation 
@@ -85,14 +85,16 @@ if train_classifier == 1
     readbv_files = 0;   % Added 8-28-2015
     blocks_nos_to_import = [1 2 3 4];
     process_raw_eeg = 0;         % Also remove extra 'S  2' triggers
-    process_raw_emg = 0; extract_emg_epochs = 0;
+    process_raw_emg = 1; extract_emg_epochs = 1;
     extract_epochs = 0;     % extract move and rest epochs
   
     % Used during extracting epochs for removing corrupted epochs. The numbers of corrupted epochs 
     % must be known in advance. Otherwise declare remove_corrupted_epochs = [];
     
-    %remove_corrupted_epochs = []; %change5
-    remove_corrupted_epochs = [75 155]; % NB_ses2_cond1_block160
+    
+    remove_corrupted_epochs = []; %change5
+    
+    %remove_corrupted_epochs = [75 155]; % NB_ses2_cond1_block160
     %remove_corrupted_epochs = [4 5 6 7 10 11 16 32 33 34 35 36]; % NJBT_ses1_cond1_block100
     
     %remove_corrupted_epochs = [13 17 18 27 28 31 36 37 38 40 66 114 115 118 159]; % S9007_ses2_cond1_block160
@@ -100,6 +102,9 @@ if train_classifier == 1
     
     %remove_corrupted_epochs = [109, 117]; % S9010_ses2_cond1_block160
     %remove_corrupted_epochs = [5, 9, 101,144,155]; % S9012_ses1_cond1_block160
+    %remove_corrupted_epochs = [78]; % S9013_ses2_cond1_block140
+    %remove_corrupted_epochs = [81, 133];  %S9014_ses2_cond1_block160_eeg_raw
+    remove_corrupted_epochs = [13, 43, 81, 82, 83, 88, 116];  %S9014_ses2_cond1_block160_eeg_raw
     
     %remove_corrupted_epochs = [ remove_corrupted_epochs 41 125 153]; %ERWS_ses2_cond3_block160
 
@@ -131,8 +136,8 @@ if train_classifier == 1
     %remove_corrupted_epochs = [21 22 50 60]; %MR_ses1_cond3
     %remove_corrupted_epochs = [49 50 61]; %MR_ses1_cond4
     
-    manipulate_epochs = 1;
-    plot_ERPs = 1;
+    manipulate_epochs = 0;
+    plot_ERPs = 0;
     label_events = 0;       % process kinematics and label the events/triggers
     use_kinematics_old_code = 0;    % Use old code for InMotion
     kin_blocks = [1 2 3 4;                % Session 1
@@ -215,6 +220,7 @@ if readbv_files == 1
     EEG_dataset_to_merge = [];
     EMG_dataset_to_merge = [];
     
+          
     for block_index = 1:length(blocks_nos_to_import)
 
 %     Only for subject S9009
@@ -231,7 +237,11 @@ if readbv_files == 1
        if blocks_nos_to_import(block_index) > 9
             EEG = pop_loadbv(folder_path, [Subject_name '_ses' Sess_num '_cond' num2str(Cond_num) '_block00' num2str(blocks_nos_to_import(block_index)) '.vhdr'], [], 1:64);
        else
-            EEG = pop_loadbv(folder_path, [Subject_name '_ses' Sess_num '_cond' num2str(Cond_num) '_block000' num2str(blocks_nos_to_import(block_index)) '.vhdr'], [], 1:64);
+           if (strcmp(Subject_name,'S9014') && strcmp(Sess_num,'1'))        % Added 7-14-2016 because for S9014 files were mistakenly labelled S9012
+               EEG = pop_loadbv(folder_path, ['S9012_ses' Sess_num '_cond' num2str(Cond_num) '_block000' num2str(blocks_nos_to_import(block_index)) '.vhdr'], [], 1:64);
+           else
+                EEG = pop_loadbv(folder_path, [Subject_name '_ses' Sess_num '_cond' num2str(Cond_num) '_block000' num2str(blocks_nos_to_import(block_index)) '.vhdr'], [], 1:64);
+           end
        end
 
         EEG.setname=[Subject_name '_ses' Sess_num '_cond' num2str(Cond_num) '_block' num2str(blocks_nos_to_import(block_index)) '_eeg_raw'];
@@ -293,7 +303,9 @@ if readbv_files == 1
                 EEG.chanlocs(j).labels = temp_EEG.chanlocs(j-8).labels;
            end
            
-       end           
+       end 
+       
+       
         EEG=pop_chanedit(EEG, 'lookup','C:\NRI_BMI_Mahi_Project_files\EEGLAB_13_1_1b\eeglab13_1_1b\plugins\dipfit2.2\standard_BESA\standard-10-5-cap385.elp');
         EEG = eeg_checkset( EEG );
         EEG = pop_saveset( EEG, 'filename',[Subject_name '_ses' num2str(Sess_num) '_cond' num2str(Cond_num) '_block' num2str(blocks_nos_to_import(block_index)) '_eeg_raw.set'],...
@@ -950,6 +962,7 @@ if process_raw_emg == 1
 % % %           end
           
     end
+use_noncausal_filter = 0; % Reset to zero to process EEG data    
 end
 %% Processing of MAHI-Exo Kinematics
 % ********** Matrix Columns ****************
@@ -1940,6 +1953,7 @@ if plot_ERPs == 1
 %          %fig_filename = ['C:\NRI_BMI_Mahi_Project_files\Figures_for_paper\' Subject_name '_ses' num2str(Sess_num) '_cond' num2str(Cond_num) '_block' num2str(Block_num) '_MRCP_grand_average.fig'];
 %         %print('-dtiff', '-r300', tiff_filename); 
 %         %saveas(gcf,fig_filename);
+
 %     else
 %         disp('Save figure aborted');
 %     end
@@ -2204,7 +2218,7 @@ if test_classifier == 1
     
     % set and open serial port
     %obj = serial('com1','baudrate',115200,'parity','none','databits',8,'stopbits',1);   %  InMotion
-    exo_obj = serial('COM3','baudrate',19200,'parity','none','databits',8,'stopbits',1);      %   Mahi               % change8
+    exo_obj = serial('COM44','baudrate',19200,'parity','none','databits',8,'stopbits',1);      %   Mahi               % change8
     video_record_obj = serial('COM1','baudrate',19200,'parity','none','databits',8,'stopbits',1);
     
     try
