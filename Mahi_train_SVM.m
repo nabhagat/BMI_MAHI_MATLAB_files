@@ -23,7 +23,7 @@ myColors = ['g','r','m','k','y','c','m','g','r','b','k','b','r','m','g','r','b',
     'g','r','b','k','y','c','m','g','r','b','k','b','r','m','g','r','b','k','y','c','m'];
 
 % Subject Details - change9
-Subject_name = 'S9017';
+Subject_name = 'S9023';
 Sess_num = '2';
 Cond_num = 1;  % 1 - Active; 2 - Passive; 3 - Triggered; 4 - Observation 
 Block_num = 160;
@@ -1099,7 +1099,7 @@ if use_svm_classifier == 1
             Performance.eeg_sensitivity = All_eeg_sensitivity{smart_opt_wl_ind}(2,:);
             Performance.eeg_specificity = All_eeg_specificity{smart_opt_wl_ind}(2,:);
             Performance.eeg_accur = All_eeg_accur{smart_opt_wl_ind}(2,:);
-            Performance.optimized_channels = All_optimized_channels{smart_opt_wl_ind};  %test_change
+            Performance.optimized_channels = All_optimized_channels{smart_opt_wl_ind};  
     end
 
     % All variables used during optimization
@@ -1132,7 +1132,7 @@ if use_svm_classifier == 1
     Performance.All_eeg_sensitivity = All_eeg_sensitivity;
     Performance.All_eeg_specificity = All_eeg_specificity;
     Performance.All_eeg_accur = All_eeg_accur;
-    Performance.All_optimized_channels = All_optimized_channels;  %test_change
+    Performance.All_optimized_channels = All_optimized_channels;  
     
     % Miscellaneous
     %Performance.test_trials_time = test_trials_time;

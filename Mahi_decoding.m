@@ -57,17 +57,17 @@ myColors = ['r','b','k','m','y','c','m','g','r','b','k','b','r','m','g','r','b',
 
 %12-1-2015
 Channels_nos = [ 37,   4, 38,   5,  39,   6,  40,... 
-                                   8, 43,   9, 32, 10, 44,  11,...
-                                 47, 13, 48, 14, 49, 15, 50,...
-                                 18, 52, 19, 53, 20, 54, 21,... 
-                                 56, 24, 57, 25, 58, 26, 59];    % 32 or 65 for FCz
+                  8, 43,   9, 32, 10, 44,  11,...
+                 47, 13, 48, 14, 49, 15, 50,...
+                 18, 52, 19, 53, 20, 54, 21,... 
+                 56, 24, 57, 25, 58, 26, 59];    % 32 or 65 for FCz
 
  EMG_channel_nos = [17 22 41 42 45 46 51 55];
 
 % Subject Details   
-Subject_name = 'S9017'; % change1
+Subject_name = 'S9023'; % change1
 Sess_num = '2';  % For calibration and classifier model              
-closeloop_Sess_num = '3';     % For saving data
+closeloop_Sess_num = '14';     % For saving data
 Cond_num = 1;  % 1 - Active/User-driven; 2 - Passive; 3 - Triggered/User-triggered; 4 - Observation 
 Block_num = 160;
 
@@ -85,8 +85,8 @@ if train_classifier == 1
     readbv_files = 0;   % Added 8-28-2015
     blocks_nos_to_import = [1 2 3 4];
     process_raw_eeg = 0;         % Also remove extra 'S  2' triggers
-    process_raw_emg = 1; extract_emg_epochs = 1;
-    extract_epochs = 0;     % extract move and rest epochs
+    process_raw_emg = 0; extract_emg_epochs = 0;
+    extract_epochs = 1;     % extract move and rest epochs
   
     % Used during extracting epochs for removing corrupted epochs. The numbers of corrupted epochs 
     % must be known in advance. Otherwise declare remove_corrupted_epochs = [];
@@ -104,7 +104,10 @@ if train_classifier == 1
     %remove_corrupted_epochs = [5, 9, 101,144,155]; % S9012_ses1_cond1_block160
     %remove_corrupted_epochs = [78]; % S9013_ses2_cond1_block140
     %remove_corrupted_epochs = [81, 133];  %S9014_ses2_cond1_block160_eeg_raw
-    remove_corrupted_epochs = [13, 43, 81, 82, 83, 88, 116];  %S9014_ses2_cond1_block160_eeg_raw
+%     remove_corrupted_epochs = [13, 43, 81, 82, 83, 88, 116];  %S9014_ses2_cond1_block160_eeg_raw
+%     remove_corrupted_epochs = [61, 156]; % S9018_ses2_cond1_block160_eeg_raw
+%     remove_corrupted_epochs = [119]; % S9020_ses2_cond3_block160_eeg_raw
+    remove_corrupted_epochs = [81, 118, 124, 139]; % S9023_ses2_cond1_block160_eeg_raw
     
     %remove_corrupted_epochs = [ remove_corrupted_epochs 41 125 153]; %ERWS_ses2_cond3_block160
 
@@ -136,8 +139,8 @@ if train_classifier == 1
     %remove_corrupted_epochs = [21 22 50 60]; %MR_ses1_cond3
     %remove_corrupted_epochs = [49 50 61]; %MR_ses1_cond4
     
-    manipulate_epochs = 0;
-    plot_ERPs = 0;
+    manipulate_epochs = 1;
+    plot_ERPs = 1;
     label_events = 0;       % process kinematics and label the events/triggers
     use_kinematics_old_code = 0;    % Use old code for InMotion
     kin_blocks = [1 2 3 4;                % Session 1
@@ -441,19 +444,20 @@ if process_raw_eeg == 1
             %   figure;
             %   freqz(num_hpf,den_hpf,512,raw_eeg_Fs); % Better to use fvtool
             %   fvtool(eeg_hpf,'Analysis','freq','Fs',raw_eeg_Fs);  % Essential to visualize frequency response properly.
-            HPFred_eeg = zeros(size(raw_eeg));
-            for i = 1:eeg_nbchns
-                %EEG.data(i,:) = detrend(EEG.data(i,:)); %Commented on 12-9-13
-                %HPFred_eeg(i,:) = filtfilt(num_hpf,den_hpf,double(EEG.data(i,:)));
-
-                if use_noncausal_filter == 1
-                    %HPFred_eeg(i,:) = filtfilt(eeg_hpf.sos.sosMatrix,eeg_hpf.sos.ScaleValues,double(raw_eeg(i,:))); % filtering with zero-phase delay
-                    HPFred_eeg(i,:) = filtfilt(num_hpf,den_hpf,double(raw_eeg(i,:))); % filtering with zero-phase delay
-                else
-                    HPFred_eeg(i,:) = filter(num_hpf,den_hpf,double(raw_eeg(i,:)));             % filtering with phase delay 
-                end
-            end
-            %EEG.data = HPFred_eeg;
+% %             HPFred_eeg = zeros(size(raw_eeg));
+% %             for i = 1:eeg_nbchns
+% %                 %EEG.data(i,:) = detrend(EEG.data(i,:)); %Commented on 12-9-13
+% %                 %HPFred_eeg(i,:) = filtfilt(num_hpf,den_hpf,double(EEG.data(i,:)));
+% % 
+% %                 if use_noncausal_filter == 1
+% %                     %HPFred_eeg(i,:) = filtfilt(eeg_hpf.sos.sosMatrix,eeg_hpf.sos.ScaleValues,double(raw_eeg(i,:))); % filtering with zero-phase delay
+% %                     HPFred_eeg(i,:) = filtfilt(num_hpf,den_hpf,double(raw_eeg(i,:))); % filtering with zero-phase delay
+% %                 else
+% %                     HPFred_eeg(i,:) = filter(num_hpf,den_hpf,double(raw_eeg(i,:)));             % filtering with phase delay 
+% %                 end
+% %             end
+            % DO NOT HIGH-PASS FILTER bcoz amplifier is already filtering - Nikunj 7-11-2017
+            HPFred_eeg = double(EEG.data); 
 
         %     if use_fir_filter == 1
         %         %correct for filter delay
@@ -562,20 +566,20 @@ if process_raw_eeg == 1
 %         
 %         SPFred_eeg = M_CAR*(SPFred_eeg);
 
-    SPFred_eeg = spatial_filter(SPFred_eeg,'CAR',car_chnns_eliminate);
+    SPFred_eeg = spatial_filter(SPFred_eeg,'CAR',car_chnns_eliminate, true);
     end 
     if large_laplacian_ref == 1
 %         EEG = exp_eval(flt_laplace(EEG,4));
 %         EEG.ref = 'laplacian';
 %         EEG.setname = 'laplacian-ref';
 %         EEG = eeg_checkset( EEG );      
-    SPFred_eeg = spatial_filter(SPFred_eeg,'LLAP',[]);          
+    SPFred_eeg = spatial_filter(SPFred_eeg,'LLAP',[], true);          
     end 
     if small_laplacian_ref == 1
-    SPFred_eeg = spatial_filter(SPFred_eeg,'SLAP',[]);    
+    SPFred_eeg = spatial_filter(SPFred_eeg,'SLAP',[], true);    
     end
     if weighted_avg_ref == 1
-    SPFred_eeg = spatial_filter(SPFred_eeg,'WAVG',[]);
+    SPFred_eeg = spatial_filter(SPFred_eeg,'WAVG',[], true);
     end
     
     % EEG.data = LPFred_eeg;
@@ -1854,8 +1858,8 @@ if plot_ERPs == 1
 % %         end
             
         plot(rest_erp_time,rest_avg_channels(Channels_nos(ind4),:),'b','LineWidth',2);
-        plot(rest_erp_time,rest_avg_channels(Channels_nos(ind4),:)+ (rest_SE_channels(Channels_nos(ind4),:)),'-','Color',[0 0 1],'LineWidth',0.5);
-        plot(rest_erp_time,rest_avg_channels(Channels_nos(ind4),:) - (rest_SE_channels(Channels_nos(ind4),:)),'-','Color',[0 0 1],'LineWidth',0.5);
+        %plot(rest_erp_time,rest_avg_channels(Channels_nos(ind4),:)+ (rest_SE_channels(Channels_nos(ind4),:)),'-','Color',[0 0 1],'LineWidth',0.5);
+        %plot(rest_erp_time,rest_avg_channels(Channels_nos(ind4),:) - (rest_SE_channels(Channels_nos(ind4),:)),'-','Color',[0 0 1],'LineWidth',0.5);
 %         
 %         jbfill(move_erp_time,move_avg_channels(Channels_nos(ind4),:)+ (move_SE_channels(Channels_nos(ind4),:)),...
 %            move_avg_channels(Channels_nos(ind4),:)- (move_SE_channels(Channels_nos(ind4),:)),[1 1 1],'k',0,0.3);
@@ -1877,7 +1881,7 @@ if plot_ERPs == 1
 %             set(gca,'YTick',[-10 0 10]);
 %             set(gca,'YTickLabel',{'-10'; '0'; '10'});
 %         else
-            axis([move_epoch_dur(1) move_epoch_dur(2) -5 5]);
+            axis([move_epoch_dur(1) move_epoch_dur(2) -10 10]);
             %axis([move_erp_time(1) 1 -15 15]);
             % set(gca,'YTick',[-5 0 2]);                                                                                                                                            % uncomment for publication figure
             % set(gca,'YTickLabel',{'-5'; '0'; '+2'},'FontWeight','normal','FontSize',paper_font_size-1);                        % uncomment for publication figure
@@ -2282,7 +2286,7 @@ if test_classifier == 1
     % Useful serial port command
     %instrfind, delete(instrfindall)
     figure; plot(Proc_EMG(3:4,:)')
-    line([0 length(Proc_EMG(3,:))],[10 10],'Color','r')
+    line([0 length(Proc_EMG(3,:))],[5 5],'Color','r')
 
      
     

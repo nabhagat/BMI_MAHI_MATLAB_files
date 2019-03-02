@@ -107,10 +107,10 @@ else
 end
 
 set(handles.axes_raster_plot,'box','on','nextplot','replacechildren');
-% handles.update_plot_timer = timer('TimerFcn', {@update_plot_timer_Callback,hObject},...
-%                                      'StartDelay', 0, 'Period',0.05,'ExecutionMode','fixedRate');       % Added 06/05/2016
-% handles.realtime_plot.plot_time = 0:1/20:(30 - (1/20)); % 30 sec @ 20 Hz
-% handles.realtime_plot.move_counts_data = zeros(size(handles.realtime_plot.plot_time));
+handles.update_plot_timer = timer('TimerFcn', {@update_plot_timer_Callback,hObject},...
+                                     'StartDelay', 0, 'Period',0.05,'ExecutionMode','fixedRate');       % Added 06/05/2016
+handles.realtime_plot.plot_time = 0:1/20:(30 - (1/20)); % 30 sec @ 20 Hz
+handles.realtime_plot.emg_biceps_triceps = zeros(2,size(handles.realtime_plot.plot_time,2));
 
 handles.reset_eeg_control_timer = timer('TimerFcn', {@reset_eeg_control_timer_Callback,hObject},...
                                      'StartDelay', 0, 'Period',1,'ExecutionMode','fixedRate');
@@ -374,6 +374,7 @@ function pushbutton_start_closeloop_Callback(hObject, eventdata, handles)
     classifier_channels =   Performance.optimized_channels; % change18 - Added 9/7/2015
     disp(classifier_channels);
     emg_classifier_channels = [42 41 51 17 45 46 55 22]; % [LB1 LB2 LT1 LT2 RB1 RB2 RT1 RT2] % change19
+%     emg_classifier_channels = [42 41 51 17 45 46 55 22]; % [LB1 LB2 LT1 LT2 RB1 RB2 RT1 RT2] % change19
     %emg_classifier_channels = [42 41 51 17 45 46 45 46]; % Added 06/05/2016 % For only right biceps control
         
     if handles.system.left_impaired 
@@ -396,10 +397,10 @@ function pushbutton_start_closeloop_Callback(hObject, eventdata, handles)
     Best_BMI_classifier = CloopClassifier.eeg_svm_model{max_acc_index};
 
     % Classifier parameters
-    cloop_prob_threshold = CloopClassifier.opt_prob_threshold;            % change20 
-    cloop_cnts_threshold  = CloopClassifier.consecutive_cnts_threshold;        % Number of consecutive valid cnts required to accept as 'GO'
-    emg_mvc_threshold = 3;             % change21       % Biceps
-    emg_tricep_threshold = 3;          % Triceps 
+    cloop_prob_threshold = 0.677; %CloopClassifier.opt_prob_threshold;            % change20 
+    cloop_cnts_threshold  = 6; %CloopClassifier.consecutive_cnts_threshold;        % Number of consecutive valid cnts required to accept as 'GO'
+    emg_mvc_threshold = 20;             % change21       % Biceps
+    emg_tricep_threshold = 20;          % Triceps 
 
     DEFINE_GO = 1;
     DEFINE_NOGO = 2;
@@ -463,9 +464,19 @@ function pushbutton_start_closeloop_Callback(hObject, eventdata, handles)
     end
     
      % Initialize plot with zero data - Added on 6/5/2016
-%     handles.realtime_plot.move_counts_handle = plot(handles.axes_raster_plot,handles.realtime_plot.plot_time,handles.realtime_plot.move_counts_data, '-ob');
-%     set(handles.realtime_plot.move_counts_handle,'YDataSource','handles.realtime_plot.move_counts_data');
-%     set(handles.realtime_plot.move_counts_handle,'XDataSource','handles.realtime_plot.plot_time');
+      %set(handles.realtime_plot.move_counts_handle,'YDataSource','handles.realtime_plot.move_counts_data');
+    %set(handles.realtime_plot.move_counts_handle,'XDataSource','handles.realtime_plot.plot_time');
+    handles.realtime_plot.emg_biceps_triceps_handle = plot(handles.axes_raster_plot,handles.realtime_plot.plot_time,handles.realtime_plot.emg_biceps_triceps);
+    set(handles.realtime_plot.emg_biceps_triceps_handle(1),'YDataSource','handles.realtime_plot.emg_biceps_triceps(1,:)');
+    set(handles.realtime_plot.emg_biceps_triceps_handle(1),'XDataSource','handles.realtime_plot.plot_time');
+    set(handles.realtime_plot.emg_biceps_triceps_handle(2),'YDataSource','handles.realtime_plot.emg_biceps_triceps(2,:)');
+    set(handles.realtime_plot.emg_biceps_triceps_handle(2),'XDataSource','handles.realtime_plot.plot_time');
+    
+     handles.realtime_plot.emg_mvc_threshold_line = line([handles.realtime_plot.plot_time(1) handles.realtime_plot.plot_time(end)], ...
+                                                                                                                         [emg_mvc_threshold emg_mvc_threshold],'Color',[0 0 1],'LineWidth',1, 'LineStyle','--');
+     handles.realtime_plot.emg_tricep_threshold_line = line([handles.realtime_plot.plot_time(1) handles.realtime_plot.plot_time(end)], ...
+                                                                                                                         [emg_tricep_threshold emg_tricep_threshold],'Color',[0 1 0],'LineWidth',1, 'LineStyle','--');
+    
     
     guidata(hObject,handles);
 
@@ -696,7 +707,9 @@ function EEGTimer_Callback(timer_object,eventdata,hObject)
                             lastBlock = -1;
                             % set data buffer to empty
                             dataX00ms = [];
-
+                            dataEMGms = []; %Added on 7-24-2017
+                            
+                            
                             %********** Initialize variables
                             orig_Fs = (1000000/props.samplingInterval);                     % Original Sampling Frequency
                             downsamp_factor = orig_Fs/resamp_Fs;
@@ -796,35 +809,58 @@ function EEGTimer_Callback(timer_object,eventdata,hObject)
                             if total_chnns == 64
                             Neighbors = [
                                          % Row F
+                                         37,1, 3, 47, 38; 
                                          4,  1, 3, 13, 5;
                                         38, 1, 37, 48, 39;
                                          5, 28, 4, 14, 6;       
                                         39, 2, 38, 49, 40;
                                          6,  2, 5, 15, 7;
-                                         % Row FC
+                                         40, 2, 39, 50, 7; 
+                                         
+                                          % Row FC
+                                         % 8, 33, 41, 18, 9;      % Redefined on 7-11-2017. Instead of Ch. 41 use Ch. 12 (T7)
+                                         8, 33, 12, 18, 9;
                                          43, 34, 8, 52, 32;        % Instead of Ch. 42 using  Ch. 8, because Ch. 42 is now being used for recording EMG - 8/28/2015
+                                         %43, 34, 42, 52, 32;        % Reverting from above
                                           9, 34, 8, 19, 10;
                                          32, 28, 43, 53, 44;    
-                                         10, 35, 9, 11, 20;
+                                         10, 35, 9, 20, 11;
                                          44, 35, 32, 54, 11;    % Instead of Ch. 45 using  Ch. 11
+                                         %44, 35, 32, 54, 45;        % Reverting from above
+                                         %11, 36, 10, 21, 46;
+                                         11, 36, 10, 21, 16;        % Redefined on 7-11-2017. Instead of Ch. 46 use Ch. 16 (T8)
+             
                                          % Row C
+                                         47, 37, 12, 56, 48; 
                                          13, 4, 12, 24, 14;
                                          48, 38, 47, 57, 49;
                                          14, 5, 13, 25, 15;
                                          49, 39, 48, 58, 50;
                                          15, 6, 14, 26, 16;
-                                         % Row CP
-                                          52, 43, 18, 60, 53;    % Instead of Ch. 51 using  Ch. 18
+                                         50, 40, 49, 59, 16;
+                                                                                  
+                                        %18, 8, 17, 60, 19;    % Redefined on 7-11-2017. Instead of Ch. 17 use Ch. 12 (T7)
+                                         18, 8, 12, 60, 19;
+                                         52, 43, 18, 60, 53;    % Instead of Ch. 51 using  Ch. 18
+                                         %52, 43, 51, 60, 53;        % Reverting from above
                                          19, 9, 18, 61, 20; 
                                          53, 32, 52, 62, 54;
                                          20, 10, 19, 63, 21;
                                          54, 44, 53, 64, 21;    % Instead of Ch. 55 using  Ch. 21
+                                         %54, 44, 53, 64, 55;        % Reverting from above
+                                         %21, 11, 20, 64, 22;   % Redefined on 7-11-2017. Instead of Ch. 22 use Ch. 16 (T8)
+                                         21, 11, 20, 64, 16;
+                                         
                                          % Row P
+                                        56, 47, 23, 29, 57;  
                                          24, 13, 23, 29, 25;
                                          57, 48, 56, 30, 58;
                                          25, 14, 24, 30, 26;
-                                         58, 49, 57, 31, 59;
-                                         26, 15, 25, 31, 27];
+                                         58, 49, 57, 30, 59;
+                                         26, 15, 25, 31, 27;
+                                         59, 50, 58, 31, 27];
+                                     
+                                     
                             elseif total_chnns == 32
                             % For modified 32 channels          
                             % Classifier channels = [9 10 16 17];
@@ -917,7 +953,9 @@ function EEGTimer_Callback(timer_object,eventdata,hObject)
                                        if start_prediction == true
                                            disp('Starting Prediction');
                                            update_emg_baseline = 1;        % Added 9/14/2015
-                                           %start(handles.update_plot_timer); % Added 6/5/2016
+                                           if strcmp(get(handles.update_plot_timer,'Running'),'off')        % Added 2/15/2017 - if timer is off only then start timer
+                                                    start(handles.update_plot_timer); % Added 6/5/2016
+                                           end
                                        else
                                            disp('Stoping Prediction');
                                        end
@@ -968,9 +1006,16 @@ function EEGTimer_Callback(timer_object,eventdata,hObject)
                                        % Calcuate emg baseline for RMS - Added 9/14/2015
                                        if update_emg_baseline == 1
                                            % look back at 33 samples ~ 10 seconds; 100 samples ~ 30 sec
-                                           emg_rms_baseline = mean(processed_emg(:,end-100+1:end),2);
+                                           emg_rms_baseline = mean(processed_emg(:,end-100+1:end),2); % change23
                                            disp(emg_rms_baseline')
                                            update_emg_baseline = 0;
+                                            % Plot emg_rms_baseline
+%                                             set(handles.realtime_plot.emg_biceps_baseline,'XData',[], 'YData',[])
+%                                             set(handles.realtime_plot.emg_triceps_baseline,'XData',[], 'YData',[])
+%                                            handles.realtime_plot.emg_biceps_baseline = line([handles.realtime_plot.plot_time(1) handles.realtime_plot.plot_time(end)], ...
+%                                                                                                                          [emg_rms_baseline(emg_control_channels(1)) emg_rms_baseline(emg_control_channels(1))],'Color',[0 0 1],'LineWidth',1.5);
+%                                            handles.realtime_plot.emg_triceps_baseline = line([handles.realtime_plot.plot_time(1) handles.realtime_plot.plot_time(end)], ...
+%                                                                                                                          [emg_rms_baseline(emg_control_channels(2)) emg_rms_baseline(emg_control_channels(2))],'Color',[0 1 0],'LineWidth',1.5);
                                        end
                                        
                                        % Calculate EMG RMS value
@@ -998,17 +1043,18 @@ function EEGTimer_Callback(timer_object,eventdata,hObject)
                                dataX00ms = dataX00ms(:,pkt_size+1 : dims(2));          % Move all excess data to next data packet        
                               
                                % High pass filter 0.1 Hz - commented 8/22/2015; uncommented on 9/8/2015
-                               for no_chns = 1:length(required_chnns)
-%                                    hp_filt_pkt(required_chnns(no_chns),:) = pkt_hp_filter(new_pkt(required_chnns(no_chns),:),...
-%                                        prev_pkt(required_chnns(no_chns),(pkt_size - filt_order)+1:pkt_size),...
-%                                        prev_hp_filt_pkt(required_chnns(no_chns),(pkt_size - filt_order)+1:pkt_size),...
-%                                        orig_Fs);
-                                   
-                                   % High pass filter using dfilt()
-                                   hpf_df2sos.States = prev_hp_filt_pkt_3D(:,:,required_chnns(no_chns));
-                                   hp_filt_pkt(required_chnns(no_chns),:) = filter(hpf_df2sos,new_pkt(required_chnns(no_chns),:));
-                                   prev_hp_filt_pkt_3D(:,:,required_chnns(no_chns)) = hpf_df2sos.States;
-                               end                            
+                                % NOT REQD since already filtered by amplifier
+% %                                for no_chns = 1:length(required_chnns)
+% % %                                    hp_filt_pkt(required_chnns(no_chns),:) = pkt_hp_filter(new_pkt(required_chnns(no_chns),:),...
+% % %                                        prev_pkt(required_chnns(no_chns),(pkt_size - filt_order)+1:pkt_size),...
+% % %                                        prev_hp_filt_pkt(required_chnns(no_chns),(pkt_size - filt_order)+1:pkt_size),...
+% % %                                        orig_Fs);
+% %                                    
+% %                                    % High pass filter using dfilt()
+% %                                    hpf_df2sos.States = prev_hp_filt_pkt_3D(:,:,required_chnns(no_chns));
+% %                                    hp_filt_pkt(required_chnns(no_chns),:) = filter(hpf_df2sos,new_pkt(required_chnns(no_chns),:));
+% %                                    prev_hp_filt_pkt_3D(:,:,required_chnns(no_chns)) = hpf_df2sos.States;
+% %                                end                            
                                
 %                                % Band pass filter 0.1-1 Hz, 8/22/2015; commented on 9/8/2015
 %                                for no_chns = 1:length(required_chnns)                                 
@@ -1026,7 +1072,8 @@ function EEGTimer_Callback(timer_object,eventdata,hObject)
                                         % Low pass filter using dfilt()
                                         lpf_df2sos.States = prev_lp_filt_pkt_3D(:,:,required_chnns(no_chns));
                                         %lp_filt_pkt(required_chnns(no_chns),:) = filter(lpf_df2sos,spatial_filt_pkt(required_chnns(no_chns),:)); % commented 9/8/2015
-                                        lp_filt_pkt(required_chnns(no_chns),:) = filter(lpf_df2sos,hp_filt_pkt(required_chnns(no_chns),:));
+%                                         lp_filt_pkt(required_chnns(no_chns),:) = filter(lpf_df2sos,hp_filt_pkt(required_chnns(no_chns),:)); % commented 7/13/2017
+                                         lp_filt_pkt(required_chnns(no_chns),:) = filter(lpf_df2sos,new_pkt(required_chnns(no_chns),:));
                                         prev_lp_filt_pkt_3D(:,:,required_chnns(no_chns)) = lpf_df2sos.States;
                                end
                                
@@ -1384,6 +1431,9 @@ function slider_emg_threshold_Callback(hObject, eventdata, handles)
     global emg_mvc_threshold
     emg_mvc_threshold = get(hObject,'value');
     set(handles.editbox_emg_threshold,'String',num2str(emg_mvc_threshold));
+    set(handles.realtime_plot.emg_mvc_threshold_line,'XData',[], 'YData',[])
+    handles.realtime_plot.emg_mvc_threshold_line = line([handles.realtime_plot.plot_time(1) handles.realtime_plot.plot_time(end)], ...
+                                                                             [emg_mvc_threshold emg_mvc_threshold],'Color',[0 0 1],'LineWidth',1,'LineStyle','--');
     guidata(hObject,handles);
         % --- Executes during object creation, after setting all properties.
         function slider_emg_threshold_CreateFcn(hObject, eventdata, handles)
@@ -1406,6 +1456,9 @@ function slider_tricep_threshold_Callback(hObject, eventdata, handles)
 global emg_tricep_threshold
     emg_tricep_threshold = get(hObject,'value');
     set(handles.editbox_triceps_threshold,'String',num2str(emg_tricep_threshold));
+    set(handles.realtime_plot.emg_tricep_threshold_line,'XData',[], 'YData',[])
+    handles.realtime_plot.emg_tricep_threshold_line = line([handles.realtime_plot.plot_time(1) handles.realtime_plot.plot_time(end)], ...
+                                                                             [emg_tricep_threshold emg_tricep_threshold],'Color',[0 1 0],'LineWidth',1,'LineStyle','--');
     guidata(hObject,handles); 
     % --- Executes during object creation, after setting all properties.
     function slider_tricep_threshold_CreateFcn(hObject, eventdata, handles)
@@ -1434,17 +1487,22 @@ end
 
 function axes_raster_plot_CreateFcn(hObject, eventdata, handles)
     
-% function update_plot_timer_Callback(timer_object,eventdata,hObject)  % Added on 06/05/2016
-%     handles = guidata(hObject);
-%     global start_prediction move_counts
-%     if start_prediction == true
-%         if ~isempty(move_counts)
-%             handles.realtime_plot.move_counts_data(1:end-1) = handles.realtime_plot.move_counts_data(2:end);
-%             handles.realtime_plot.move_counts_data(end) = move_counts(end);
-%         end
-%     refreshdata(handles.realtime_plot.move_counts_handle);
-%     end
-%     guidata(hObject,handles); 
+function update_plot_timer_Callback(timer_object,eventdata,hObject)  % Added on 06/05/2016
+    handles = guidata(hObject);
+    global start_prediction processed_emg emg_control_channels 
+    if start_prediction == true
+        if ~isempty(processed_emg)
+            %handles.realtime_plot.move_counts_data(1:end-1) = handles.realtime_plot.move_counts_data(2:end);
+            %handles.realtime_plot.move_counts_data(end) = 
+            handles.realtime_plot.emg_biceps_triceps(:,1:end-1) = handles.realtime_plot.emg_biceps_triceps(:,2:end); %circshit doesn't work - 2/17/17
+            handles.realtime_plot.emg_biceps_triceps(:,end) = processed_emg(emg_control_channels,end);
+%             handles.realtime_plot.emg_triceps = circshift(handles.realtime_plot.emg_triceps,1);
+%             handles.realtime_plot.emg_triceps(end) = processed_emg(emg_control_channels(2),end);            
+            refreshdata(handles.realtime_plot.emg_biceps_triceps_handle,'caller');     % 'caller' means looks for variables in calling functions workspace
+%             refreshdata(handles.realtime_plot.emg_biceps_handle,'caller');     % 'caller' means looks for variables in calling functions workspace
+        end
+    end
+    guidata(hObject,handles); 
 
 function pushbutton_manual_save_data_Callback(hObject, eventdata, handles)
 save_cloop_data(handles);

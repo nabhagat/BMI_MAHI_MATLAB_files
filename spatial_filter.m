@@ -1,4 +1,4 @@
-function [ procEEGdata ] = spatial_filter(rawEEGdata,filter_type,eliminate_chns_from_ref)
+function [ procEEGdata ] = spatial_filter(rawEEGdata,filter_type,eliminate_chns_from_ref, emg_used)
 % spatial_filter() uses different spatial filters for preprocessing of EEG signals 
 % By Nikunj Bhagat, University of Houston
 % Detailed explanation goes here
@@ -24,7 +24,8 @@ switch filter_type
     case 'LLAP'
 %% Create Large Laplacian Matrix
 
-Neighbors = [
+if (emg_used)
+    Neighbors = [
              % Row F
              37,1, 3, 47, 38; 
              4,  1, 3, 13, 5;
@@ -33,16 +34,20 @@ Neighbors = [
             39, 2, 38, 49, 40;
              6,  2, 5, 15, 7;
              40, 2, 39, 50, 7; 
+             
              % Row FC
-             8, 33, 41, 18, 9;
+             % 8, 33, 41, 18, 9;      % Redefined on 7-11-2017. Instead of Ch. 41 use Ch. 12 (T7)
+             8, 33, 12, 18, 9;
              43, 34, 8, 52, 32;        % Instead of Ch. 42 using  Ch. 8, because Ch. 42 is now being used for recording EMG - 8/28/2015
              %43, 34, 42, 52, 32;        % Reverting from above
               9, 34, 8, 19, 10;
              32, 28, 43, 53, 44;    
-             10, 35, 9, 11, 20;
+             10, 35, 9, 20, 11;
              44, 35, 32, 54, 11;    % Instead of Ch. 45 using  Ch. 11
              %44, 35, 32, 54, 45;        % Reverting from above
-             11, 36, 10, 21, 46;
+             %11, 36, 10, 21, 46;
+             11, 36, 10, 21, 16;        % Redefined on 7-11-2017. Instead of Ch. 46 use Ch. 16 (T8)
+             
              % Row C
              47, 37, 12, 56, 48; 
              13, 4, 12, 24, 14;
@@ -51,8 +56,10 @@ Neighbors = [
              49, 39, 48, 58, 50;
              15, 6, 14, 26, 16;
              50, 40, 49, 59, 16;
+             
              % Row CP
-             18, 8, 17, 60, 19;
+             %18, 8, 17, 60, 19;    % Redefined on 7-11-2017. Instead of Ch. 17 use Ch. 12 (T7)
+             18, 8, 12, 60, 19;
              52, 43, 18, 60, 53;    % Instead of Ch. 51 using  Ch. 18
              %52, 43, 51, 60, 53;        % Reverting from above
              19, 9, 18, 61, 20; 
@@ -60,7 +67,9 @@ Neighbors = [
              20, 10, 19, 63, 21;
              54, 44, 53, 64, 21;    % Instead of Ch. 55 using  Ch. 21
              %54, 44, 53, 64, 55;        % Reverting from above
-             21, 11, 20, 64, 22;
+             %21, 11, 20, 64, 22;   % Redefined on 7-11-2017. Instead of Ch. 22 use Ch. 16 (T8)
+             21, 11, 20, 64, 16;
+             
              % Row P
              56, 47, 23, 29, 57;  
              24, 13, 23, 29, 25;
@@ -69,7 +78,53 @@ Neighbors = [
              58, 49, 57, 30, 59;
              26, 15, 25, 31, 27;
              59, 50, 58, 31, 27];
-         
+else % Force sensor used
+    Neighbors = [                                         
+             % Row F
+             37,1, 3, 47, 38; 
+              4,  1, 3, 13, 5;
+             38, 1, 37, 48, 39;
+              5, 28, 4, 14, 6;       
+             39, 2, 38, 49, 40;
+              6,  2, 5, 15, 7;
+             40, 2, 39, 50, 7; 
+
+              % Row FC
+             8, 33, 41, 18, 9;      % Redefined on 7-11-2017. Use Ch. 41 because EMG not used                                                                                  
+             43, 34, 42, 52, 32;    % Reverting because EMG not used
+              9, 34, 8, 19, 10;
+             32, 28, 43, 53, 44;    
+             10, 35, 9, 20, 11;                                         
+             44, 35, 32, 54, 45;    % Reverting because EMG not used
+             11, 36, 10, 21, 46;    % Redefined on 7-11-2017. Use Ch. 46 because EMG not used
+
+             % Row C
+             47, 37, 12, 56, 48; 
+             13, 4, 12, 24, 14;
+             48, 38, 47, 57, 49;
+             14, 5, 13, 25, 15;
+             49, 39, 48, 58, 50;
+             15, 6, 14, 26, 16;
+             50, 40, 49, 59, 16;
+
+             %18, 8, 17, 60, 19;    % Redefined on 7-11-2017. Instead of Ch. 17 use Ch. 12 (T7)
+             18, 8, 12, 60, 19;     % because Ch. 17 is used for recording force                                         
+             52, 43, 51, 60, 53;    % Reverting because EMG not used
+             19, 9, 18, 61, 20; 
+             53, 32, 52, 62, 54;
+             20, 10, 19, 63, 21;                                         
+             54, 44, 53, 64, 55;    % Reverting because EMG not used
+             21, 11, 20, 64, 22;   % Redefined on 7-11-2017. Use Ch. 22 because EMG not used                                          
+
+             % Row P
+             56, 47, 23, 29, 57;  
+             24, 13, 23, 29, 25;
+             57, 48, 56, 30, 58;
+             25, 14, 24, 30, 26;
+             58, 49, 57, 30, 59;
+             26, 15, 25, 31, 27;
+             59, 50, 58, 31, 27];
+end
             for nn_row = 1:size(Neighbors,1) 
                 Spatial_matrix(Neighbors(nn_row,1),Neighbors(nn_row,2:end)) = -0.25;
             end

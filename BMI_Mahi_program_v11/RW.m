@@ -7,7 +7,7 @@
 % delete(obj);
 % clear obj;
 
-obj = serial('com4','baudrate',19200,'parity','none','databits',8,'stopbits',1);
+obj = serial('com44','baudrate',19200,'parity','none','databits',8,'stopbits',1);
 fopen(obj);
 %a = fread(obj, 1, 'uchar');              % No longer used. Nikunj09/05/2014
 %fprintf('%s\n', a);

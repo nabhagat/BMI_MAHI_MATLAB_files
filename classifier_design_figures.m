@@ -10,7 +10,7 @@ plot_feature_space = 0;
 plot_offline_performance = 0;
 plot_offline_performance_new = 0;
 plot_single_spatial_average_trials = 0;
-plot_classifier_design_all = 0;
+plot_classifier_design_all = 1;
 
 % Subject Details
 Subject_name = 'BNBO';
@@ -791,7 +791,7 @@ end
 %% Merge figures for classifier design
 if plot_classifier_design_all == 1
     
-   figure('Position',[1050 1100 7.16*116 5*116]); 
+   figure('Position',[1050 100 7.16*116 5*116]); 
    N_plot = tight_subplot(3,4,[0.1 0.05],[0.1 0.05],[0.05 0.01]);
      
    ax5pos = get(N_plot(5),'Position'); 
