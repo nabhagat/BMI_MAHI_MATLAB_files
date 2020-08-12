@@ -1,4 +1,4 @@
-function [hlegend] = spider_plot(P,P_labels, axes_interval, axes_precision, FillColorTrasnparency, plot_std, varargin)
+function [hlegend] = spider_plot(P,P_labels, Pmax, axes_interval, axes_precision, FillColorTrasnparency, plot_std, varargin)
 % Create a spider web or radar plot with an axes specified for each column
 %
 % spider_plot(P, P_labels, axes_interval, axes_precision) creates a spider
@@ -94,7 +94,7 @@ if length(P_labels) ~= num_of_points
 end
 
 % Pre-allocation
-max_values = [12 6 6 6 10 14 6 6]; %max_values = zeros(1, num_of_points); % Changed to reflect Fugl-Meyer scores on 11-28-18
+max_values = Pmax; %max_values = zeros(1, num_of_points); % Changed to reflect Fugl-Meyer scores on 11-28-18
 min_values = zeros(1, num_of_points);
 axis_increment = zeros(1, num_of_points);
 
@@ -140,15 +140,17 @@ theta = 0:polar_increments:2*pi;
 [x_axes, y_axes] = pol2cartvect(theta, radius);
 
 % Plot polar axes
-grey = [1, 1, 1] * 0.8;
-h = line(x_axes, y_axes,...
-    'LineWidth', 0.5,...
-    'Color', grey);
+if ~plot_std
+    grey = [1, 1, 1] * 0.8;
+    h = line(x_axes, y_axes,...
+        'LineWidth', 0.5,...
+        'Color', grey);
 
-% Iterate through all the line handles
-for ii = 1:length(h)
-    % Remove polar axes from legend
-    h(ii).Annotation.LegendInformation.IconDisplayStyle = 'off';
+    % Iterate through all the line handles
+    for ii = 1:length(h)
+        % Remove polar axes from legend
+        h(ii).Annotation.LegendInformation.IconDisplayStyle = 'off';
+    end
 end
 
 %%% Polar Isocurves %%%
@@ -161,31 +163,38 @@ radius = (0:axes_limit/shifted_axes_interval:axes_limit)';
 % Convert polar to cartesian coordinates
 [x_isocurves, y_isocurves] = pol2cartvect(theta, radius);
 
-% Plot polar isocurves
-hold on;
-h = plot(x_isocurves', y_isocurves',...
-    'LineWidth', 0.5,...
-    'Color', grey);
+if ~plot_std
+    % Plot polar isocurves
+    hold on;
+    h = plot(x_isocurves', y_isocurves',...
+        'LineWidth', 0.5,...
+        'Color', grey);
 
-% Iterate through all the plot handles
-for ii = 1:length(h)
-    % Remove polar isocurves from legend
-    h(ii).Annotation.LegendInformation.IconDisplayStyle = 'off';
+    % Iterate through all the plot handles
+    for ii = 1:length(h)
+        % Remove polar isocurves from legend
+        h(ii).Annotation.LegendInformation.IconDisplayStyle = 'off';
+    end
 end
 
 %%% Figure Properties %%%
-colors = [0.2, 0.6, 1; %0, 0.5, 1; % #0080FF - light blue
-    1, 1, 0;    % #FFFF00 - yellow
-    1, 0.5, 0;  % #FF8000 - orange
-    1,0,0;      % Red    
-    0, 0, 0;    % black
-    0, 0.4470, 0.7410;...
-    0.8500, 0.3250, 0.0980;...
-    0.9290, 0.6940, 0.1250;...
-    0.4940, 0.1840, 0.5560;...
-    0.4660, 0.6740, 0.1880;...
-    0.3010, 0.7450, 0.9330;...
-    0.6350, 0.0780, 0.1840];
+colors = [0 0.64  1; %blue_color 
+          0.3   0   0.6;   %purple
+          1 0.3   0; %orange_color                     
+          0   0.5    0; %dark green
+          0   0     0;
+          0.2, 0.6, 1; %0, 0.5, 1; % #0080FF - light blue
+        1, 1, 0;    % #FFFF00 - yellow
+        1, 0.5, 0;  % #FF8000 - orange
+        1,0,0;      % Red    
+        0, 0, 0;    % black
+        0, 0.4470, 0.7410;...
+        0.8500, 0.3250, 0.0980;...
+        0.9290, 0.6940, 0.1250;...
+        0.4940, 0.1840, 0.5560;...
+        0.4660, 0.6740, 0.1880;...
+        0.3010, 0.7450, 0.9330;...
+        0.6350, 0.0780, 0.1840];
 
 % Repeat colors is necessary
 repeat_colors = fix(row_of_points/size(colors, 1))+1;

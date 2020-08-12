@@ -1,9 +1,9 @@
-function [Posthoc_Average] = Calculate_RPs_sessionwise(Subject_name, closeloop_Sess_num, readbv_files, blocks_nos_to_import, remove_corrupted_epochs, impaired_hand, Time_to_Trigger_sessionwise, Performance, process_raw_emg, process_raw_eeg, extract_epochs)
+function [Posthoc_Average] = Calculate_RPs_sessionwise(Subject_name, closeloop_Sess_num, readbv_files, blocks_nos_to_import, remove_corrupted_epochs, impaired_hand, Addl_session_info, Performance, process_raw_emg, process_raw_eeg, extract_epochs)
 
 % Function for extracting RPs from several blocks of closed-loop BMI data in a session  
 % Created By:  Nikunj Bhagat, PhD
 % Contact : nbhagat08[at]gmail.com
-% Date Created - 7/6/20149
+% Date Created - 7/6/2019
 %% ***********Revisions 
 
 
@@ -173,9 +173,9 @@ if readbv_files == 1
 
            %**** STEP4: Apply TK Energy operator to Diff_emg
            TKEO_emg = applyTKEO(Diff_emg);
-           emglpfc = 2;       
-           [num_lpf,den_lpf] = butter(8,(emglpfc/(emg_Fs/2)));
-        %    fvtool(num_lpf, den_lpf)
+           emglpfc = 0.5;       
+           [num_lpf,den_lpf] = butter(4,(emglpfc/(emg_Fs/2)));
+%            fvtool(num_lpf, den_lpf)
            if use_noncausal_filter == 1                
                TKEO_emgf = filtfilt(num_lpf,den_lpf,TKEO_emg')';
            else   
@@ -188,23 +188,27 @@ if readbv_files == 1
            TKEO_emgf(:,1:30*emg_Fs) = 0;
 
            % B. Zero impossibly high values
-           for i = 1:4       
-               ridiculously_high_value = find(TKEO_emgf(i,:) > 1E4);
-               for j = 1:length(ridiculously_high_value)
-                   if ridiculously_high_value(j) >= 250         %0.5sec
-                        TKEO_emgf(i,ridiculously_high_value(j)-250:ridiculously_high_value(j)) = 0;                
-                   end
-               end             
-           end
+%            for i = 1:4       
+%                ridiculously_high_value = find(TKEO_emgf(i,:) > 1E5); % Changed from 1E4 on 12-25-2019
+% %                for j = 1:length(ridiculously_high_value)
+% %                    if ridiculously_high_value(j) >= 250         %0.5sec
+% %                         TKEO_emgf(i,ridiculously_high_value(j)-250:ridiculously_high_value(j)) = 0;                
+% %                    end
+% %                end             
+%            end
 
            %C. Detrend the data
-           TKEO_emgf = detrend(TKEO_emgf','constant')';
+%            TKEO_emgf = detrend(TKEO_emgf','constant')';
            
            %D. Calculate mean and s.d of TKEO after ignoring first 30seconds of
            % data
-           mTKEO_emgf = mean(TKEO_emgf(:,30*emg_Fs+1:end),2); 
-           stdTKEO_emgf = std(TKEO_emgf(:,30*emg_Fs+1:end),0,2); 
+%            mTKEO_emgf = mean(TKEO_emgf(:,30*emg_Fs+1:end),2); 
+%            stdTKEO_emgf = std(TKEO_emgf(:,30*emg_Fs+1:end),0,2); 
 
+           %B. Directly zscore the data
+           TKEO_emgf_original = TKEO_emgf;
+           TKEO_emgf(:,30*emg_Fs+1:end) = zscore(TKEO_emgf(:,30*emg_Fs+1:end)')';
+           
 %            figure; 
 %            subplot(2,1,1); 
 %            plot(emgt, TKEO_emgf(1,:),'b');
@@ -222,13 +226,13 @@ if readbv_files == 1
 
            if strcmp(impaired_hand,'L')
                % Detect onset using left hand ativity
-               FlexOnset = (TKEO_emgf(1,:) >= stdTKEO_emgf(1));
-               ExtOnset = (TKEO_emgf(2,:) >= stdTKEO_emgf(2));
+               FlexOnset = (TKEO_emgf(1,:) >= 0.5); % half standard deviation
+               ExtOnset = (TKEO_emgf(2,:) >= 0.5);
 
            elseif strcmp(impaired_hand,'R')
                % otherwise right hand 
-               FlexOnset = (TKEO_emgf(3,:) >= stdTKEO_emgf(3));
-               ExtOnset = (TKEO_emgf(4,:) >= stdTKEO_emgf(4));
+               FlexOnset = (TKEO_emgf(3,:) >= 0.5);
+               ExtOnset = (TKEO_emgf(4,:) >= 0.5);
            end
            CombinedOnset = FlexOnset | ExtOnset;
            [Movement_Onset, CombinedOnsetUnique] = ExtractUniqueTriggers(CombinedOnset, 1, 1);
@@ -238,8 +242,31 @@ if readbv_files == 1
            %activeEMG_duration = [Movement_Offset(2:end);length(emgt)] - Movement_Onset;   
            activeEMG_duration = [Movement_Offset(2:length(Movement_Onset));length(emgt)] - Movement_Onset;   
            %figure; hist(activeEMG_duration./500,100)
-
-           EMG_onset_detected = (Movement_Onset(activeEMG_duration./emg_Fs >= 1))./emg_Fs;    
+           
+           EMG_onset_detected_indices = Movement_Onset(activeEMG_duration./emg_Fs >= 1);
+%            if strcmp(impaired_hand,'L')
+%                % Detect onset using left hand ativity
+%                EMGcombination = max(TKEO_emgf([1,2],:));
+%                QuietEMGthreshold = max(stdTKEO_emgf(1:2));
+%            elseif strcmp(impaired_hand,'R')
+%                % otherwise right hand 
+%                EMGcombination = max(TKEO_emgf([3,4],:));
+%                QuietEMGthreshold = max(stdTKEO_emgf(3:4));
+%            end
+%            rejected_EMG_onset_detected_indices = [];
+%            if (length(EMG_onset_detected_indices) > 1)
+%                for index=2:length(EMG_onset_detected_indices)
+%                    if ~isempty(find(EMGcombination(EMG_onset_detected_indices(index-1):EMG_onset_detected_indices(index)) <= QuietEMGthreshold))
+%                       %do nothing 
+%                    else
+%                       % remove this index
+%                       rejected_EMG_onset_detected_indices = [rejected_EMG_onset_detected_indices; EMG_onset_detected_indices(index)];
+%                       EMG_onset_detected_indices(index) = [];
+%                    end
+%                end
+%            end
+           EMG_onset_detected = (EMG_onset_detected_indices)./emg_Fs;
+%            EMG_onset_rejected = (rejected_EMG_onset_detected_indices)./emg_Fs;
 
             % **** STEP 6: Keep only the EMG onset detected events that occur
             % during a trial, i.e. between 'S  2' and 'S  16' or 'S  1'    
@@ -251,18 +278,23 @@ if readbv_files == 1
             valid_EMG_onset_detected = []; 
             start_of_trial_timestamps = zeros(length(start_of_trial_events),1);
             end_of_trial_timestamps = zeros(length(start_of_trial_events),1);
-            Time_to_Trigger_blockwise = Time_to_Trigger_sessionwise(Time_to_Trigger_sessionwise(:,1) == blocks_nos_to_import(block_index),2);
+            Time_to_Trigger_blockwise = Addl_session_info(Addl_session_info(:,1) == blocks_nos_to_import(block_index),2);
+            Target_movement_blockwise = Addl_session_info(Addl_session_info(:,1) == blocks_nos_to_import(block_index),3);
             for SOTindex = 1:length(start_of_trial_events)
                 start_of_trial_timestamps(SOTindex) = EEG.event(start_of_trial_events(SOTindex)).latency/emg_Fs;        
-                end_of_trial_timestamps(SOTindex) = start_of_trial_timestamps(SOTindex) + Time_to_Trigger_blockwise(SOTindex) + 3;        % wait additional 3sec
-
-                valid_EMG_onset_detected = [valid_EMG_onset_detected;...
-                    EMG_onset_detected((EMG_onset_detected >= start_of_trial_timestamps(SOTindex)) & ...
-                    (EMG_onset_detected <= end_of_trial_timestamps(SOTindex)))];                
+                end_of_trial_timestamps(SOTindex) = min(start_of_trial_timestamps(SOTindex) + Time_to_Trigger_blockwise(SOTindex) + 3,... % wait additional 3sec
+                   start_of_trial_timestamps(SOTindex) + 15.001);      % Added min() condition on 12-25-2019
+                EMG_onset_indexwise = EMG_onset_detected((EMG_onset_detected >= start_of_trial_timestamps(SOTindex)) & ...
+                    (EMG_onset_detected <= end_of_trial_timestamps(SOTindex))); 
+                if (~isempty(EMG_onset_indexwise))
+                    valid_EMG_onset_detected = [valid_EMG_onset_detected;...
+                        [EMG_onset_indexwise, Target_movement_blockwise(SOTindex)*ones(length(EMG_onset_indexwise),1)]...
+                    ];                                    
+                end                
             end
 
             figure; hold on;
-            title([Subject_name, 'Session #' num2str(closeloop_Sess_num)...
+            title([Subject_name, ', Session #' num2str(closeloop_Sess_num)...
                 ', block# ' num2str(blocks_nos_to_import(block_index))]);
             if strcmp(impaired_hand,'L')
                plot(emgt, TKEO_emgf(1:2,:));          
@@ -275,30 +307,35 @@ if readbv_files == 1
         %     end
             for i = 1:length(valid_EMG_onset_detected)
                line([valid_EMG_onset_detected(i) valid_EMG_onset_detected(i)], ...
-                   [0 5000], 'Color', 'k');
+                   [0 10], 'Color', 'k');
             end
-        %     for i = 1:length(start_of_trial_timestamps)
-        %         line([start_of_trial_timestamps(i) start_of_trial_timestamps(i)], ...
-        %            [0 6000], 'Color', 'g');
-        %        line([end_of_trial_timestamps(i) end_of_trial_timestamps(i)], ...
-        %            [0 6000], 'Color', 'm');
-        %     end
-        %     ylim([0 5E3])
+%             for i = 1:length(EMG_onset_rejected)
+%                line([EMG_onset_rejected(i) EMG_onset_rejected(i)], ...
+%                    [0 35000], 'Color', [1 0.3 0]);
+%             end
+            for i = 1:length(start_of_trial_timestamps)
+                line([start_of_trial_timestamps(i) start_of_trial_timestamps(i)], ...
+                   [0 10], 'Color', 'g');
+               line([end_of_trial_timestamps(i) end_of_trial_timestamps(i)], ...
+                   [0 10], 'Color', 'm');
+            end
+            ylim([0 (max(TKEO_emgf(:))+3)]);
 
             EEG.data(1,:) = EMG_rms(1,:);
             EEG.data(2,:) = EMG_rms(2,:);
             EEG.data(3,:) = EMG_rms(3,:);
             EEG.data(4,:) = EMG_rms(4,:);
-            EEG.data(5,:) = TKEO_emgf(1,:);
-            EEG.data(6,:) = TKEO_emgf(2,:);
-            EEG.data(7,:) = TKEO_emgf(3,:);
-            EEG.data(8,:) = TKEO_emgf(4,:);
+            EEG.data(5,:) = TKEO_emgf_original(1,:);
+            EEG.data(6,:) = TKEO_emgf_original(2,:);
+            EEG.data(7,:) = TKEO_emgf_original(3,:);
+            EEG.data(8,:) = TKEO_emgf_original(4,:);
             
             if (~isempty(valid_EMG_onset_detected))
                 marker_file_id = fopen([closeloop_folder_path Subject_name '_ses' num2str(closeloop_Sess_num)...
                     '_closeloop_block' num2str(blocks_nos_to_import(block_index)) '_EMGonset_markers.txt'],'w');
-                for k= 1:length(valid_EMG_onset_detected)
-                    fprintf(marker_file_id,'EMGonset \t %d \n', valid_EMG_onset_detected(k));
+                for k= 1:size(valid_EMG_onset_detected,1)
+                    fprintf(marker_file_id,'EMGonset \t %d \n', valid_EMG_onset_detected(k,1));
+                    fprintf(marker_file_id,'Target%d \t %d \n', valid_EMG_onset_detected(k,2),valid_EMG_onset_detected(k,1));
                 end
                 fclose(marker_file_id);
                 EEG = pop_importevent( EEG, 'event',[closeloop_folder_path Subject_name '_ses' num2str(closeloop_Sess_num)...
