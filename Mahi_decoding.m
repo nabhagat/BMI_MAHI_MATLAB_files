@@ -65,26 +65,26 @@ Channels_nos = [ 37,   4, 38,   5,  39,   6,  40,...
  EMG_channel_nos = [17 22 41 42 45 46 51 55];
 
 % Subject Details   
-Subject_name = 'S9023'; % change1
+Subject_name = 'S9009'; % change1
 Sess_num = '2';  % For calibration and classifier model              
 closeloop_Sess_num = '14';     % For saving data
-Cond_num = 1;  % 1 - Active/User-driven; 2 - Passive; 3 - Triggered/User-triggered; 4 - Observation 
-Block_num = 160;
+Cond_num = 3;  % 1 - Active/User-driven; 2 - Passive; 3 - Triggered/User-triggered; 4 - Observation 
+Block_num = 150;
 
-folder_path = ['C:\NRI_BMI_Mahi_Project_files\All_Subjects\Subject_' Subject_name '\' Subject_name '_Session' num2str(Sess_num) '\']; % change2
-closeloop_folder_path = ['C:\NRI_BMI_Mahi_Project_files\All_Subjects\Subject_' Subject_name '\' Subject_name '_Session' num2str(closeloop_Sess_num) '\']; % change3
+folder_path = ['D:\NRI_Project_Data\Clinical_study_Data\Subject_' Subject_name '\' Subject_name '_Session' num2str(Sess_num) '\']; % change2
+closeloop_folder_path = ['D:\NRI_Project_Data\Clinical_study_Data\Subject_' Subject_name '\' Subject_name '_Session' num2str(closeloop_Sess_num) '\']; % change3
 %folder_path = ['F:\Nikunj_Data\InMotion_Experiment_Data\' Subject_name '_Session' num2str(Sess_num) '\'];  
            
 % Flags to control the processing 
-train_classifier = 0;   %change4
-test_classifier = 1;
+train_classifier = 1;   %change4
+test_classifier = 0;
 use_GUI_for_testing = 1;    % always 1
 
 if train_classifier == 1
     disp('******************** Training Model **********************************');
     readbv_files = 0;   % Added 8-28-2015
     blocks_nos_to_import = [1 2 3 4];
-    process_raw_eeg = 0;         % Also remove extra 'S  2' triggers
+    process_raw_eeg = 1;         % Also remove extra 'S  2' triggers
     process_raw_emg = 0; extract_emg_epochs = 0;
     extract_epochs = 1;     % extract move and rest epochs
   
@@ -100,14 +100,14 @@ if train_classifier == 1
     %remove_corrupted_epochs = [13 17 18 27 28 31 36 37 38 40 66 114 115 118 159]; % S9007_ses2_cond1_block160
     %remove_corrupted_epochs = [137]; % S9007_ses2_cond3_block150
     
-    %remove_corrupted_epochs = [109, 117]; % S9010_ses2_cond1_block160
-    %remove_corrupted_epochs = [5, 9, 101,144,155]; % S9012_ses1_cond1_block160
+%     remove_corrupted_epochs = [109, 117]; % S9010_ses2_cond1_block160
+%     remove_corrupted_epochs = [5, 9, 101,144,155]; % S9012_ses2_cond1_block160
     %remove_corrupted_epochs = [78]; % S9013_ses2_cond1_block140
-    %remove_corrupted_epochs = [81, 133];  %S9014_ses2_cond1_block160_eeg_raw
+%     remove_corrupted_epochs = [81, 133];  %S9014_ses2_cond1_block160_eeg_raw
 %     remove_corrupted_epochs = [13, 43, 81, 82, 83, 88, 116];  %S9014_ses2_cond1_block160_eeg_raw
 %     remove_corrupted_epochs = [61, 156]; % S9018_ses2_cond1_block160_eeg_raw
 %     remove_corrupted_epochs = [119]; % S9020_ses2_cond3_block160_eeg_raw
-    remove_corrupted_epochs = [81, 118, 124, 139]; % S9023_ses2_cond1_block160_eeg_raw
+%     remove_corrupted_epochs = [81, 118, 124, 139]; % S9023_ses2_cond1_block160_eeg_raw
     
     %remove_corrupted_epochs = [ remove_corrupted_epochs 41 125 153]; %ERWS_ses2_cond3_block160
 
@@ -144,7 +144,7 @@ if train_classifier == 1
     label_events = 0;       % process kinematics and label the events/triggers
     use_kinematics_old_code = 0;    % Use old code for InMotion
     kin_blocks = [1 2 3 4;                % Session 1
-                             1 2 3 4];              % Session 2
+                  1 2 3 4];              % Session 2
      % kin_blocks must have 4 columns. If a block is absent, replace it with 0. But don't replace zero for first and last block.   
     
      %standardize_data_flag = 0;     % Not used
@@ -191,7 +191,10 @@ end
 %2. Filter cutoff frequency  
 hpfc = 0.1;     % HPF Cutoff frequency = 0.1 Hz    
 lpfc = 1;      % LPF Cutoff frequency = 1 Hz
-use_noncausal_filter = 0; %always 0; 1 - yes, use zero-phase filtfilt(); 0 - No, use filter()            %change6
+use_noncausal_filter = 0; % 1 - yes, use zero-phase filtfilt(); 0 - No, use filter()            %change6
+% 2020-08-16 -Nikunj- Remember to first use non-causal filtering to
+% identify the MRCP channels. Then use causal filtering for training the
+% classifier
 use_fir_filter = 0; % always 0
 use_band_pass = 0; %always 0, because 4th order bandpass butterworth filter is unstable
 
@@ -1005,7 +1008,7 @@ if label_events == 1
                     continue;
                 else
                     %Redefine folder path
-                    folder_path = ['C:\NRI_BMI_Mahi_Project_files\All_Subjects\Subject_' Subject_name '\' Subject_name '_Session' num2str(Sess_num) '\']; % change7
+                    folder_path = ['D:\NRI_Project_Data\Clinical_study_Data\Subject_' Subject_name '\' Subject_name '_Session' num2str(Sess_num) '\']; % change7
                     %kinematics_raw = importdata([Subject_name '_kinematics.mat']); % Raw data sampled at 200 Hz
                     kinematics_raw = dlmread([folder_path Subject_name '_ses' num2str(Sess_num) '_cond' num2str(Cond_num)...
                     '_block' num2str(kin_block_num) '_kinematics.txt'],'\t',14,1); % Raw data sampled at 200 Hz
